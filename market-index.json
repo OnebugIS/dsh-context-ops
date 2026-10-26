@@ -1,0 +1,54 @@
+{
+  "format": 1,
+  "title": {
+    "en": "dsh-context-ops",
+    "zh": "dsh-context-ops"
+  },
+  "description": {
+    "en": "A self-hosted DSH plugin index for dsh-context-ops.",
+    "zh": "dsh-context-ops 的自托管 DSH 插件索引。"
+  },
+  "metadata": {
+    "categories": {
+      "context": {
+        "title": {
+          "en": "Context Management",
+          "zh": "上下文管理"
+        }
+      }
+    }
+  },
+  "plugins": [
+    {
+      "name": "dsh-context-ops",
+      "title": {
+        "en": "dsh-context-ops",
+        "zh": "上下文运维"
+      },
+      "description": {
+        "en": "Routes compaction summaries to a stronger model and adds handoff and context-decision skills.",
+        "zh": "把压缩摘要路由到强模型，并新增交接与上下文压力决策两个技能。"
+      },
+      "author": "廷宇",
+      "homepage": "https://github.com/OnebugIS/dsh-context-ops",
+      "repository": {
+        "url": "https://github.com/OnebugIS/dsh-context-ops"
+      },
+      "metadata": {
+        "category": "context",
+        "keywords": ["context", "compaction", "handoff", "dsh"]
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1793036423,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/OnebugIS/dsh-context-ops",
+            "commit": "4c8171c94f8978cc657c138005456331a625021a"
+          }
+        }
+      ]
+    }
+  ]
+}
