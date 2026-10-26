@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="320" viewBox="0 0 1200 320" role="img" aria-label="dsh-context-ops">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1a3a"/>
+      <stop offset="1" stop-color="#1e3f86"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5b8cff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#5b8cff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="320" rx="20" fill="url(#bg)"/>
+  <rect x="0" y="0" width="620" height="320" rx="20" fill="url(#glow)"/>
+  <g transform="translate(84, 96)">
+    <rect x="0" y="0" width="120" height="36" rx="9" fill="#5b8cff"/>
+    <rect x="0" y="48" width="120" height="36" rx="9" fill="#8fb0ff"/>
+    <rect x="0" y="96" width="120" height="36" rx="9" fill="#c4d5ff"/>
+  </g>
+  <text x="250" y="132" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="58" font-weight="700" fill="#ffffff">dsh-context-ops</text>
+  <text x="252" y="184" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="27" fill="#c3d2ff">上下文运维 · Context Ops</text>
+  <text x="252" y="226" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="20" fill="#8fa6d8">handoff · decision · diagnose · pressure</text>
+  <text x="84" y="286" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="18" fill="#6f86b8">DeepSeek Harness plugin · no third-party runtime dependencies</text>
+</svg>

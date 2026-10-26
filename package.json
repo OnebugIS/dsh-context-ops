@@ -10,7 +10,7 @@
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
-  "files": ["lib", "locale", "icon.svg", "cordis.patch.yml", "README.md", "CHANGELOG.md", "LICENSE"],
+  "files": ["lib", "locale", "assets", "icon.svg", "cordis.patch.yml", "README.md", "CHANGELOG.md", "LICENSE"],
   "scripts": { "test": "node --test" },
   "engines": { "node": ">=20" },
   "keywords": ["deepseek-harness","dsh","dsh-plugin","context","compaction","handover","skill"],

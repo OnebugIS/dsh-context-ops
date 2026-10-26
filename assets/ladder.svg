@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="360" viewBox="0 0 1000 360" role="img" aria-label="Context pressure ladder">
+  <rect width="1000" height="360" fill="#ffffff"/>
+  <text x="50" y="52" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="26" font-weight="700" fill="#0b1a3a">上下文压力阶梯（经验分档）</text>
+  <text x="50" y="82" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" fill="#6b7b99">pct = pressureTokens ÷ window × 100%；以 context_pressure 返回值为准</text>
+
+  <g transform="translate(50, 120)">
+    <rect x="0" y="0" width="150" height="70" rx="6" fill="#2ecc71"/>
+    <rect x="150" y="0" width="150" height="70" fill="#8bd88f"/>
+    <rect x="300" y="0" width="150" height="70" fill="#f1c40f"/>
+    <rect x="450" y="0" width="150" height="70" fill="#f39c12"/>
+    <rect x="600" y="0" width="150" height="70" fill="#e67e22"/>
+    <rect x="750" y="0" width="150" height="70" rx="6" fill="#e74c3c"/>
+
+    <text x="75" y="44" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="18" font-weight="700" fill="#ffffff">&lt;30%</text>
+    <text x="225" y="44" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="18" font-weight="700" fill="#1b3a24">30–50%</text>
+    <text x="375" y="44" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="18" font-weight="700" fill="#3a2d00">50–70%</text>
+    <text x="525" y="44" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="18" font-weight="700" fill="#ffffff">70–85%</text>
+    <text x="675" y="44" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="18" font-weight="700" fill="#ffffff">85–100%</text>
+    <text x="825" y="44" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="18" font-weight="700" fill="#ffffff">≥100%</text>
+
+    <text x="75" y="98" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" fill="#0b1a3a">正常推进</text>
+    <text x="225" y="98" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" fill="#0b1a3a">长任务落盘</text>
+    <text x="375" y="98" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" fill="#0b1a3a">留小结</text>
+    <text x="525" y="98" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" fill="#0b1a3a">可试压</text>
+    <text x="675" y="98" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" fill="#0b1a3a">准备交接</text>
+    <text x="825" y="98" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" fill="#0b1a3a">核口径/转会话</text>
+  </g>
+
+  <g transform="translate(50, 250)">
+    <text x="0" y="0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" fill="#6b7b99">硬判据（唯一必须满足）：</text>
+    <text x="0" y="28" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#0b1a3a">能压缩 ⇔ pressureTokens &lt; window × 0.95</text>
+    <text x="520" y="0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" fill="#6b7b99">压缩失败三归因：</text>
+    <text x="520" y="26" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" fill="#0b1a3a">context overflow → 换大窗口模型或交班</text>
+    <text x="520" y="48" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" fill="#0b1a3a">stream idle timeout → 别重试，直接交班</text>
+    <text x="520" y="70" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" fill="#0b1a3a">summary is not smaller → 到极限，忽略</text>
+  </g>
+</svg>
