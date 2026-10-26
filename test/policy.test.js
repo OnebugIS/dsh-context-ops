@@ -4,7 +4,7 @@ import { LADDER, HARD_RULE, FAILURE_ATTRIBUTION, REAL_WINDOWS } from '../lib/pol
 import { HANDOFF_SKILL } from '../lib/skills/handoff.js'
 import { DECISION_SKILL } from '../lib/skills/decision.js'
 import { DIAGNOSE_SKILL } from '../lib/skills/diagnose.js'
-import { pressureTool } from '../lib/index.js'
+import { pressureTool, resolveConfig } from '../lib/index.js'
 
 test('阶梯是 6 档且包含关键阈值', () => {
   const tiers = ['<30%', '30–50%', '50–70%', '70–85%', '85–100%', '≥100%']
@@ -48,4 +48,29 @@ test('policy 常量非空且稳定', () => {
   assert.ok(HARD_RULE.includes('0.95'))
   assert.ok(FAILURE_ATTRIBUTION.includes('summary is not smaller'))
   assert.ok(REAL_WINDOWS.includes('1,048,576'))
+})
+
+test('resolveConfig: 默认全开，未知键报错', () => {
+  assert.deepEqual(resolveConfig(), { enablePressureTool: true, enableCommands: true })
+  assert.deepEqual(resolveConfig({ enablePressureTool: false }), {
+    enablePressureTool: false,
+    enableCommands: true,
+  })
+  assert.throws(() => resolveConfig({ nope: 1 }), /unknown config key/)
+})
+
+test('context_pressure: 无 agent 时返回空值', async () => {
+  const tool = pressureTool({})
+  const out = await tool.execute({}, {})
+  assert.equal(out.pressureTokens, 0)
+  assert.equal(out.window, null)
+  assert.equal(out.note, '')
+})
+
+test('context_pressure: measure 抛错时兜底', async () => {
+  const ctx = { tokenMeter: { measure() { throw new Error('boom') } } }
+  const tool = pressureTool(ctx)
+  const out = await tool.execute({}, { agent: { session: {} } })
+  assert.equal(out.pressureTokens, 0)
+  assert.match(out.note, /boom/)
 })

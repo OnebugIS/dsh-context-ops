@@ -163,6 +163,24 @@ flowchart TD
     G --> I["用户点选后才执行 /compact 或写交接"]
 ```
 
+## 插件配置
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `enablePressureTool` | `true` | 是否注册 `context_pressure` 工具（需要 `tokenMeter`，缺失时自动跳过）|
+| `enableCommands` | `true` | 是否注册 `/handoff` `/pressure` `/diagnose`（需要 `commands`，缺失时自动跳过）|
+
+未知键会直接报错（`unknown config key`），不静默忽略。
+
+## 健壮性
+
+| 场景 | 行为 |
+|---|---|
+| `tokenMeter` 缺失 | 只跳过 `context_pressure` 工具，三个技能照常注册 |
+| `commands` 缺失 | 只跳过斜杠命令，技能与工具照常 |
+| 无会话调用工具 | 返回空值（`window: null` / `pct: null`），不抛错 |
+| 读数失败 | 返回空值 + `note` 错误说明，不把读数故障变成对话故障 |
+
 ## 配置：压缩摘要走强模型（可选）
 
 本插件**不写死** provider/model。如需把 `/compact` 的摘要路由到指定模型，在你自己的 profile `cordis.patch.yml` 里给 `compaction-basic` 配（DSH 原生字段）：

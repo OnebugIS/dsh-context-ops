@@ -9,7 +9,12 @@
 #         summarizationModel: deepseek-v4-pro       # 换成你自己的 model
 #
 #    两个字段要么都空（默认 = 用当前会话模型），要么都填，否则 compaction-basic 会拒载。
+# 3) 插件自身配置（未知键会直接报错）：
+#    enablePressureTool: 是否注册 context_pressure 工具（需要 tokenMeter，缺失时自动跳过）
+#    enableCommands:     是否注册 /handoff /pressure /diagnose（需要 commands，缺失时自动跳过）
 - insert:
     - id: context-ops
       name: 'dsh-context-ops'
-      config: {}
+      config:
+        enablePressureTool: true
+        enableCommands: true
