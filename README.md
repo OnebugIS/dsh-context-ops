@@ -94,8 +94,10 @@ dsh plugin --profile <profile> add "file:/绝对路径/dsh-context-ops"
   "surfaceTokens": 71022,
   "window": 131072,
   "pct": 62.8,
+  "cacheHitRate": 0.995,
   "provider": "zicode",
-  "model": "deepseek-v4-pro"
+  "model": "deepseek-v4-pro",
+  "note": ""
 }
 ```
 
@@ -105,7 +107,11 @@ dsh plugin --profile <profile> add "file:/绝对路径/dsh-context-ops"
 | `surfaceTokens` | 对话面 token |
 | `window` | 真实上下文窗口；未知时 `null` |
 | `pct` | 占用百分比 = `pressureTokens / window * 100`；窗口未知时 `null` |
+| `cacheHitRate` | 缓存命中率（0–1）= `cacheReadTokens / (cacheReadTokens + uncachedInputTokens)`；未知时 `null` |
 | `provider` / `model` | 当前路由的 provider / model；未知时为空串 |
+| `note` | 读数失败时的错误说明；正常为空串 |
+
+> `cacheHitRate` 高（接近 1）= 前缀被复用，便宜且首 token 快；持续偏低说明上下文在不断被改写（或 provider 不支持缓存），是「该换会话/重开」的信号。
 
 > 判断压缩时用 `pressureTokens ÷ window`，**不要**用界面显示的 `projectedTokens`（偏低）。
 
@@ -171,8 +177,19 @@ flowchart TD
 |---|---|---|
 | `enablePressureTool` | `true` | 是否注册 `context_pressure` 工具（需要 `tokenMeter`，缺失时自动跳过）|
 | `enableCommands` | `true` | 是否注册 `/handoff` `/pressure` `/diagnose`（需要 `commands`，缺失时自动跳过）|
+| `enableReminder` | `false` | 主动提醒：每轮首步压力 ≥ `remindAt` 时，注入一条不落盘的 system-reminder |
+| `remindAt` | `85` | 提醒阈值百分比（50–95）|
 
 未知键会直接报错（`unknown config key`），不静默忽略。
+
+### 主动提醒（可选）
+
+开启后，每轮**首步**检查压力；`pct ≥ remindAt` 时把一条 `system-reminder` 拼进本次请求：
+
+- **不落盘**：只进入本次请求，不写入会话、不触发新回合；
+- **去重**：同一会话、同一档位（85 / 95）只提醒一次；压力回落后重置；
+- **可忽略**：文案带「可忽略」，不影响正常对话；
+- **默认关闭**：`enableReminder: true` 才生效。
 
 ## 健壮性
 
@@ -195,6 +212,8 @@ flowchart TD
 ```
 
 两个字段要么都空（默认 = 用当前会话模型），要么都填，否则 `compaction-basic` 会拒载。
+
+> **压缩前预处理（DSH 已自带并默认挂载）**：`compaction-tool-result-pruner`（裁剪超大工具结果，模型无关）+ `compaction-image-offload`（超预算图片换成占位符重试）在 `/compact` 时自动参与——先裁剪/卸载，再由摘要模型压。无需本插件额外配置。
 
 ## 项目结构
 

@@ -92,6 +92,7 @@ Called with no arguments, it returns:
   "surfaceTokens": 71022,
   "window": 131072,
   "pct": 62.8,
+  "cacheHitRate": 0.995,
   "provider": "zicode",
   "model": "deepseek-v4-pro",
   "note": ""
@@ -104,8 +105,11 @@ Called with no arguments, it returns:
 | `surfaceTokens` | Surface-only token count |
 | `window` | Real context window; `null` when unknown |
 | `pct` | Usage percent = `pressureTokens / window * 100`; `null` when window is unknown |
+| `cacheHitRate` | Cache hit rate (0–1) = `cacheReadTokens / (cacheReadTokens + uncachedInputTokens)`; `null` when unknown |
 | `provider` / `model` | Current route; empty string when unknown |
 | `note` | Error text when the reading failed; empty otherwise |
+
+> A high `cacheHitRate` (near 1) means the prefix is being reused — cheaper and faster first token. A persistently low rate means the context keeps being rewritten (or the provider does not cache), a signal to consider a fresh session.
 
 > Use `pressureTokens ÷ window` for compaction decisions, **not** the `projectedTokens` shown in the UI (it under-reports).
 
@@ -171,8 +175,19 @@ flowchart TD
 |---|---|---|
 | `enablePressureTool` | `true` | Register `context_pressure` (needs `tokenMeter`; skipped if missing) |
 | `enableCommands` | `true` | Register `/handoff` `/pressure` `/diagnose` (needs `commands`; skipped if missing) |
+| `enableReminder` | `false` | Active reminder: on the first step of a turn, when pressure ≥ `remindAt`, inject a non-persisted system-reminder |
+| `remindAt` | `85` | Reminder threshold percent (50–95) |
 
 Unknown keys raise an error (`unknown config key`) instead of being silently ignored.
+
+### Active reminder (optional)
+
+When enabled, the first step of each turn checks pressure; if `pct ≥ remindAt`, a `system-reminder` is appended to that request:
+
+- **Not persisted**: it only enters the current request, never the session log, and never starts a new turn;
+- **Deduplicated**: once per session per band (85 / 95); resets when pressure falls back;
+- **Ignorable**: the text says it can be ignored and does not affect the conversation;
+- **Off by default**: only active with `enableReminder: true`.
 
 ## Robustness
 

@@ -12,9 +12,13 @@
 # 3) 插件自身配置（未知键会直接报错）：
 #    enablePressureTool: 是否注册 context_pressure 工具（需要 tokenMeter，缺失时自动跳过）
 #    enableCommands:     是否注册 /handoff /pressure /diagnose（需要 commands，缺失时自动跳过）
+#    enableReminder:     是否开启主动提醒（每轮首步压力 ≥ remindAt 时注入不落盘的 system-reminder，默认关）
+#    remindAt:           提醒阈值百分比（50–95，默认 85）
 - insert:
     - id: context-ops
       name: 'dsh-context-ops'
       config:
         enablePressureTool: true
         enableCommands: true
+        enableReminder: false
+        remindAt: 85

@@ -50,13 +50,44 @@ test('policy 常量非空且稳定', () => {
   assert.ok(REAL_WINDOWS.includes('1,048,576'))
 })
 
-test('resolveConfig: 默认全开，未知键报错', () => {
-  assert.deepEqual(resolveConfig(), { enablePressureTool: true, enableCommands: true })
-  assert.deepEqual(resolveConfig({ enablePressureTool: false }), {
+test('resolveConfig: 默认值、开关与未知键', () => {
+  assert.deepEqual(resolveConfig(), {
+    enablePressureTool: true,
+    enableCommands: true,
+    enableReminder: false,
+    remindAt: 85,
+  })
+  assert.deepEqual(resolveConfig({ enablePressureTool: false, enableReminder: true, remindAt: 70 }), {
     enablePressureTool: false,
     enableCommands: true,
+    enableReminder: true,
+    remindAt: 70,
   })
+  // remindAt 会被夹到 50–95
+  assert.equal(resolveConfig({ remindAt: 10 }).remindAt, 50)
+  assert.equal(resolveConfig({ remindAt: 120 }).remindAt, 95)
   assert.throws(() => resolveConfig({ nope: 1 }), /unknown config key/)
+})
+
+test('context_pressure: 从 tokenUsage 投影算缓存命中率', async () => {
+  const ctx = {
+    tokenMeter: { measure() { return { totalTokens: 100, surfaceTokens: 80 } } },
+    get(name) {
+      if (name !== 'sessionProjections') return undefined
+      return {
+        stateOf: () => ({
+          totals: { cacheReadTokens: 900, uncachedInputTokens: 100, outputTokens: 0, cacheWriteTokens: 0 },
+        }),
+      }
+    },
+  }
+  const tool = pressureTool(ctx)
+  const out = await tool.execute(
+    {},
+    { agent: { session: { requestContext: () => ({ contextWindow: 200, provider: 'p', model: 'm' }) } } },
+  )
+  assert.equal(out.cacheHitRate, 0.9)
+  assert.equal(out.pct, 50)
 })
 
 test('context_pressure: 无 agent 时返回空值', async () => {

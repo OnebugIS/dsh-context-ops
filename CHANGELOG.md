@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### 新增
+
+- 主动提醒（可选）：每轮首步压力 ≥ `remindAt` 时，通过 `agent/pre-step` 注入一条不落盘、不触发新回合的 system-reminder；同会话同档位去重。
+- `context_pressure` 新增 `cacheHitRate`（0–1），从 DSH `tokenUsage` 投影读取，用于判断「该压还是该换会话」。
+- 新增配置 `enableReminder`（默认 `false`）/ `remindAt`（默认 `85`，夹在 50–95）。
+- 新增 1 个测试：缓存命中率计算。
+
 ### 健壮性
 
 - `tokenMeter` 从硬依赖改为条件注入：缺失时只降级压力工具，技能照常注册。
