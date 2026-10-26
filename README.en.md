@@ -76,13 +76,13 @@ dsh plugin --profile <profile> add "file:/absolute/path/to/dsh-context-ops"
 
 **Triggers**: context management, should I compact, should I hand off, what about the context, how much pressure, how much room left.
 
-**Flow**: call `context_pressure` for real numbers, then apply the ladder and give one prescription (what + why + which number).
+**Flow**: call `context_pressure` for real numbers, apply the ladder, and give one prescription (what + why + which number); when compaction is possible, **copy `/compact` to the clipboard** (`pbcopy` on macOS, otherwise prompt the user to type it), and when it is not, recommend a handoff.
 
 ### 3) Context diagnosis `context-diagnose`
 
 **Triggers**: context diagnosis, diagnose, context check-up, check-up, ctx-check, take a look at my context.
 
-**Output**: a diagnosis report (status / band / can-compact / should-compact / warnings), with clickable options.
+**Output**: a diagnosis report (status / band / can-compact / should-compact / warnings); copies `/compact` to the clipboard when compaction is possible, recommends a handoff otherwise.
 
 ## The `context_pressure` tool
 
@@ -207,9 +207,9 @@ flowchart TD
     C -- Yes --> D["Apply the ladder, give a prescription"]
     C -- No --> E["Hand off / switch to a larger window"]
     D --> F{"Is the prescription an action?"}
-    F -- Yes --> G["ask_user_question with options"]
+    F -- Yes --> G["Copy /compact to the clipboard (or prompt to type it)"]
     F -- No --> H["Conclusion only"]
-    G --> I["Run /compact or write the handoff only after the user picks"]
+    G --> I["User pastes /compact or triggers a handoff"]
 ```
 
 ## Plugin config

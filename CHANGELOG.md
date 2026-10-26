@@ -28,6 +28,10 @@
 - **阶梯与宿主阈值对齐说明**：新增 `AUTO_COMPACT` 常量与文档，写明 DSH `compaction-basic` 默认在约 80%（减 64K headroom）自动压缩，本插件的 85% 档在自动模式下通常轮不到人动手。
 - **`context_history` 口径说明**：`peakTokens/lastTokens` 是输入侧 token（input+cacheRead+cacheWrite），与 `pressureTokens` 不可相减，已写进描述与文档。
 
+### 变更
+
+- 决策/诊断技能不再用 `ask_user_question` 给按钮（按钮无法真正执行 `/compact`），改为把 `/compact` 复制到剪贴板，用户粘贴执行；不能压时建议走交接。
+
 ### 新增
 
 - **`context_history` 工具**：会话级趋势（峰值/最后一次输入侧 token）+ 压缩记录（尝试/成功/失败），用于复盘「压了几次、成没成、涨得多快」。由 `enablePressureTool` 一并注册（该开关现在管两个工具）。
