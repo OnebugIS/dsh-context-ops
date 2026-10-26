@@ -26,26 +26,27 @@
         "zh": "上下文运维"
       },
       "description": {
-        "en": "Routes compaction summaries to a stronger model and adds handoff and context-decision skills.",
-        "zh": "把压缩摘要路由到强模型，并新增交接与上下文压力决策两个技能。"
+        "en": "Adds handoff, context-decision and context-diagnose skills, a self-contained pressure-reading tool, and slash commands.",
+        "zh": "新增交接、上下文决策、上下文诊断三个技能，自带压力读数工具与斜杠命令。"
       },
       "author": "廷宇",
+      "icon": "https://raw.githubusercontent.com/OnebugIS/dsh-context-ops/main/icon.svg",
       "homepage": "https://github.com/OnebugIS/dsh-context-ops",
       "repository": {
         "url": "https://github.com/OnebugIS/dsh-context-ops"
       },
       "metadata": {
         "category": "context",
-        "keywords": ["context", "compaction", "handoff", "dsh"]
+        "keywords": ["context", "compaction", "handoff", "diagnose", "dsh"]
       },
       "versions": [
         {
           "version": "0.1.0",
-          "publishTimestamp": 1793036423,
+          "publishTimestamp": 1793038631,
           "source": {
             "type": "git",
             "url": "https://github.com/OnebugIS/dsh-context-ops",
-            "commit": "4c8171c94f8978cc657c138005456331a625021a"
+            "commit": "ef0e2d744a3c1fa51da8bd05f259a723fd3963f0"
           }
         }
       ]
