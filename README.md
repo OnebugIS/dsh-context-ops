@@ -17,6 +17,8 @@
 </p>
 
 > A DeepSeek Harness plugin for context management: handoff, compaction decision and diagnosis skills, a self-contained pressure tool, and slash commands.
+>
+> English: [README.en.md](README.en.md)
 
 ---
 
