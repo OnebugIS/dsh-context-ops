@@ -26,8 +26,8 @@
         "zh": "上下文运维"
       },
       "description": {
-        "en": "Adds handoff, context-decision and context-diagnose skills, a self-contained pressure-reading tool, and slash commands.",
-        "zh": "新增交接、上下文决策、上下文诊断三个技能，自带压力读数工具与斜杠命令。"
+        "en": "Adds handoff, context-decision and context-diagnose skills, self-contained pressure and compaction-history tools, slash commands, and an optional pressure reminder.",
+        "zh": "新增交接、上下文决策、上下文诊断三个技能，自带压力读数与压缩复盘工具、斜杠命令，以及可选的压力提醒。"
       },
       "author": "廷宇",
       "icon": "https://raw.githubusercontent.com/OnebugIS/dsh-context-ops/main/icon.svg",
@@ -40,6 +40,15 @@
         "keywords": ["context", "compaction", "handoff", "diagnose", "dsh"]
       },
       "versions": [
+        {
+          "version": "0.1.1",
+          "publishTimestamp": 1793042953,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/OnebugIS/dsh-context-ops",
+            "commit": "8c81a6b18c274cd948f51f3c5bb95ef5fa0c12fd"
+          }
+        },
         {
           "version": "0.1.0",
           "publishTimestamp": 1793041202,
