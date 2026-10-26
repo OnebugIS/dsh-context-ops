@@ -1,11 +1,17 @@
 {
   "name": "dsh-context-ops",
   "version": "0.1.0",
-  "description": "DSH 上下文运维插件：压缩摘要走强模型 + 交接技能 + 上下文决策技能。",
+  "description": "DSH 上下文运维插件：交接技能 + 上下文决策/诊断技能 + 压力读数工具 + 斜杠命令。",
   "type": "module",
   "main": "lib/index.js",
-  "exports": { ".": "./lib/index.js", "./package.json": "./package.json" },
-  "files": ["lib", "cordis.patch.yml", "README.md", "LICENSE"],
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": ["lib", "locale", "icon.svg", "cordis.patch.yml", "README.md", "CHANGELOG.md", "LICENSE"],
+  "scripts": { "test": "node --test" },
   "engines": { "node": ">=20" },
   "keywords": ["deepseek-harness","dsh","dsh-plugin","context","compaction","handover","skill"],
   "license": "MIT",

@@ -1,12 +1,15 @@
 # dsh-context-ops bundle patch
-# 1) 注册插件本体（两个技能：context-handoff / context-decision）
-# 2) 把 /compact 的摘要路由到更强模型，减少压缩失败与摘要丢约束。
-# 只改摘要模型，不影响正常对话模型；改完需重启 DSH。
+# 1) 注册插件本体（技能 + context_pressure 工具 + /handoff /pressure 命令）
+# 2) 压缩摘要模型：本插件不写死任何账号/模型。如需把 /compact 摘要路由到指定模型，
+#    在你自己的 profile cordis.patch.yml 里给 compaction-basic 配（DSH 原生字段）：
+#
+#     - id: compaction-basic
+#       config:
+#         summarizationProvider: deepseek-account   # 换成你自己的 provider
+#         summarizationModel: deepseek-v4-pro       # 换成你自己的 model
+#
+#    两个字段要么都空（默认 = 用当前会话模型），要么都填，否则 compaction-basic 会拒载。
 - insert:
     - id: context-ops
       name: 'dsh-context-ops'
       config: {}
-- id: compaction-basic
-  config:
-    summarizationProvider: deepseek-account
-    summarizationModel: deepseek-v4-pro
