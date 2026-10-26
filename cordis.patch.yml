@@ -1,0 +1,12 @@
+# dsh-context-ops bundle patch
+# 1) 注册插件本体（两个技能：context-handoff / context-decision）
+# 2) 把 /compact 的摘要路由到更强模型，减少压缩失败与摘要丢约束。
+# 只改摘要模型，不影响正常对话模型；改完需重启 DSH。
+- insert:
+    - id: context-ops
+      name: 'dsh-context-ops'
+      config: {}
+- id: compaction-basic
+  config:
+    summarizationProvider: deepseek-account
+    summarizationModel: deepseek-v4-pro
