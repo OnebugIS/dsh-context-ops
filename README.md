@@ -40,7 +40,9 @@
 | 上下文决策技能 | `context-decision` | `lib/skills/decision.js` | 读数 → 套阶梯 → 给**一句**处方 |
 | 上下文诊断技能 | `context-diagnose` | `lib/skills/diagnose.js` | 一次体检，逐层核对，给**完整诊断报告** |
 | 压力读数工具 | `context_pressure` | `lib/index.js` | 自包含读数，数据来自 DSH 自带 `tokenMeter` |
+| 历史/复盘工具 | `context_history` | `lib/index.js` | 峰值、最后一次输入侧 token、压缩尝试/成功/失败次数 |
 | 斜杠命令 | `/handoff` `/pressure` `/diagnose` | `lib/index.js` | 显式触发对应技能（`commands` 服务缺失时自动跳过） |
+| 主动提醒（可选） | `enableReminder` | `lib/index.js` | 压力过阈值时把一句提示挂进宿主「运行时上下文」快照，不伪造 user 消息 |
 | 压缩摘要走强模型 | `compaction-basic` 配置 | 文档化（见下） | 走 DSH 原生字段，本插件**不写死**任何账号/模型 |
 
 ## 快速开始
@@ -93,10 +95,13 @@ dsh plugin --profile <profile> add "file:/绝对路径/dsh-context-ops"
   "pressureTokens": 82341,
   "surfaceTokens": 71022,
   "window": 131072,
+  "declaredWindow": 131072,
+  "realWindow": 1048576,
+  "windowInflated": false,
   "pct": 62.8,
   "cacheHitRate": 0.995,
   "provider": "zicode",
-  "model": "deepseek-v4-pro",
+  "model": "deepseek-flash",
   "note": ""
 }
 ```
@@ -105,15 +110,40 @@ dsh plugin --profile <profile> add "file:/绝对路径/dsh-context-ops"
 |---|---|
 | `pressureTokens` | 请求体总 token（判断压缩的真实口径） |
 | `surfaceTokens` | 对话面 token |
-| `window` | 真实上下文窗口；未知时 `null` |
+| `window` | 有效上下文窗口 = `min(declaredWindow, realWindow)`；未知时 `null` |
+| `declaredWindow` | 路由 / profile 声明的窗口；未知时 `null` |
+| `realWindow` | 该模型真实上限（内置窗口表）；型号不在表里时 `null` |
+| `windowInflated` | 窗口虚高 = `declaredWindow > realWindow`；无法判断时 `null` |
 | `pct` | 占用百分比 = `pressureTokens / window * 100`；窗口未知时 `null` |
 | `cacheHitRate` | 缓存命中率（0–1）= `cacheReadTokens / (cacheReadTokens + uncachedInputTokens)`；未知时 `null` |
 | `provider` / `model` | 当前路由的 provider / model；未知时为空串 |
 | `note` | 读数失败时的错误说明；正常为空串 |
 
+> `windowInflated` 是「自动压缩永不触发」的元凶检测：把 1M 模型配成 2M 时，声明窗口虚高、pct 永远压不到 50%，`/compact` 也永远不会自动来。工具按真实上限收紧 `window` 并给出告警，**改 profile 才是根治**。
+>
+> 反过来把大窗口模型特意配小（如 1M 模型限到 128k）是合法限制：`windowInflated=false`，`window` 就是那个小值，不会被放大。
+
 > `cacheHitRate` 高（接近 1）= 前缀被复用，便宜且首 token 快；持续偏低说明上下文在不断被改写（或 provider 不支持缓存），是「该换会话/重开」的信号。
+> 注意它是**全会话累计**：第一次冷请求必然 0% 命中，会话越长越被历史稀释。
+
+> `windowInflated = null` 有两种情况：型号不在内置窗口表里，或这个会话还没有过路由窗口记录。**都表示「无法判断」，不要当成 false 当作安全**。
 
 > 判断压缩时用 `pressureTokens ÷ window`，**不要**用界面显示的 `projectedTokens`（偏低）。
+
+## 历史复盘工具 `context_history`
+
+无参数调用，返回会话级的趋势与压缩记录：
+
+| 字段 | 含义 |
+|---|---|
+| `peakTokens` / `lastTokens` | 历史峰值 / 最后一次请求的**输入侧 token**（input + cacheRead + cacheWrite，不含输出） |
+| `compactionCount` | 压缩尝试次数（`compaction/start`）|
+| `compactionSuccess` | 压缩成功次数（`compaction/summary`）|
+| `compactionError` | 压缩失败次数（`compaction/end` 且带 `error`）|
+
+> `peakTokens` 和 `context_pressure.pressureTokens` **不是同一把尺子**：后者含输出预算与工具/系统提示，系统性更大。趋势可以比，两个数不能相减。
+
+> 失败为什么这么算：宿主只有 `compaction/start` / `summary` / `end` 三种落盘事件，失败记在 `compaction/end.data.error` 上；`compaction/summary-error` 只是内存里的 waterfall 钩子名，不落盘，数它永远是 0。
 
 ## 斜杠命令
 
@@ -129,6 +159,12 @@ dsh plugin --profile <profile> add "file:/绝对路径/dsh-context-ops"
 
 **硬判据**：能压缩 ⇔ `pressureTokens < window × 0.95`。
 
+**⚠ 但这张表不是宿主的阈值。** DSH 自己的 `compaction-basic` 默认在
+`min(contextWindow × 0.8, contextWindow − 预留 output − 65536)` 就自动压缩——
+1M 窗口约 **838k（80%）**、131k 窗口约 **105k**。也就是说正常自动模式下，「85% 才准备交接」这一档
+通常轮不到人动手：等你看到 85%，压缩早已发生。本插件的阶梯是**建议**，不改变宿主行为；
+要改触发点，去 profile 里配 `compaction-basic` 的 `thresholdRatio` / `headroomTokens`。
+
 **压缩失败三归因**：
 1. `context overflow` → 换大窗口模型再压，或交班；
 2. `stream idle timeout` → 别重试，直接交班；
@@ -143,20 +179,26 @@ flowchart LR
         T[tools registry]
         C[commands]
         M[tokenMeter]
+        SP[systemPrompt.context]
     end
     subgraph P["dsh-context-ops"]
         H["context-handoff"]
         D["context-decision"]
         G["context-diagnose"]
         PT["context_pressure"]
+        HT["context_history"]
         CM["/handoff · /pressure · /diagnose"]
+        RM["压力提醒（可选）"]
     end
     H --> S
     D --> S
     G --> S
     PT --> T
+    HT --> T
     PT --> M
     CM --> C
+    RM --> SP
+    RM --> M
 ```
 
 ```mermaid
@@ -175,30 +217,36 @@ flowchart TD
 
 | 键 | 默认 | 说明 |
 |---|---|---|
-| `enablePressureTool` | `true` | 是否注册 `context_pressure` 工具（需要 `tokenMeter`，缺失时自动跳过）|
+| `enablePressureTool` | `true` | 是否注册 `context_pressure` + `context_history` 两个工具（需要 `tokenMeter`，缺失时自动跳过）|
 | `enableCommands` | `true` | 是否注册 `/handoff` `/pressure` `/diagnose`（需要 `commands`，缺失时自动跳过）|
-| `enableReminder` | `false` | 主动提醒：每轮首步压力 ≥ `remindAt` 时，注入一条不落盘的 system-reminder |
+| `enableReminder` | `false` | 主动提醒：压力 ≥ `remindAt` 时，把一句提示挂进宿主「运行时上下文」快照 |
 | `remindAt` | `85` | 提醒阈值百分比（50–95）|
 
-未知键会直接报错（`unknown config key`），不静默忽略。
+未知键直接报错（`unknown config key`）；已知键类型写错（如 `enableReminder: "true"`、`remindAt: "70"`）也报错，不静默取反或回落。
 
 ### 主动提醒（可选）
 
-开启后，每轮**首步**检查压力；`pct ≥ remindAt` 时把一条 `system-reminder` 拼进本次请求：
+开启后，每次装配请求时求值一次：`pct ≥ remindAt` 就把一句 `system-reminder` 挂进宿主的
+**运行时上下文快照**（`ctx.systemPrompt.context()`）。
 
-- **不落盘**：只进入本次请求，不写入会话、不触发新回合；
-- **去重**：同一会话、同一档位（85 / 95）只提醒一次；压力回落后重置；
-- **可忽略**：文案带「可忽略」，不影响正常对话；
+- **不伪造 user 消息**：这是关键。走 `agent/pre-step` 往 `decision.messages` 里塞消息看着像「不落盘」，
+  但宿主 `step()` 会把每一条非 `runtime-context` 的消息 `session.append('user/message')` ——
+  提醒会进会话历史、出现在对话里、之后每个请求都重发，等于上下文插件自己给自己加压力。
+- **只按档位变文案**：文本里不带精确百分比和 token 数（那会让快照每轮重写）。跨档（85 → 95）才变；
+  压力回落自动消失。
+- **可忽略**：文案带「可忽略」，不影响正常对话；要精确数字让它调 `context_pressure`。
 - **默认关闭**：`enableReminder: true` 才生效。
 
 ## 健壮性
 
 | 场景 | 行为 |
 |---|---|
-| `tokenMeter` 缺失 | 只跳过 `context_pressure` 工具，三个技能照常注册 |
+| `tokenMeter` 缺失 | 跳过两个工具（读数没数据源），三个技能照常注册 |
 | `commands` 缺失 | 只跳过斜杠命令，技能与工具照常 |
-| 无会话调用工具 | 返回空值（`window: null` / `pct: null`），不抛错 |
+| `systemPrompt` 缺失 | 只跳过主动提醒，其余照常 |
+| 无会话调用工具 | 返回空值 + `note: no session`（`pressureTokens` 仍是 0，所以**必须看 note**）|
 | 读数失败 | 返回空值 + `note` 错误说明，不把读数故障变成对话故障 |
+| 提醒求值失败 | 返回空串（不注入），并留一条 `warn` 日志，不静默吞掉代码错误 |
 
 ## 配置：压缩摘要走强模型（可选）
 
@@ -220,8 +268,8 @@ flowchart TD
 ```
 dsh-context-ops/
 ├── lib/
-│   ├── index.js          入口：注册技能 + context_pressure 工具 + 斜杠命令
-│   ├── policy.js         统一策略常量（阶梯/硬判据/三归因/真实窗口）
+│   ├── index.js          入口：注册技能 + 两个工具 + 斜杠命令 + 可选提醒
+│   ├── policy.js         统一策略常量（阶梯/宿主阈值/硬判据/三归因/真实窗口）
 │   └── skills/
 │       ├── handoff.js    交接技能
 │       ├── decision.js   上下文决策技能

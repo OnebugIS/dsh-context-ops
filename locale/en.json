@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Context Ops",
-    "description": "Context management for DeepSeek Harness: handoff, compaction decision and diagnosis skills, a pressure tool, and slash commands."
+    "description": "Context management for DeepSeek Harness: handoff, compaction decision and diagnosis skills, pressure and compaction-history tools, slash commands, and an optional pressure reminder."
   }
 }

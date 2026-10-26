@@ -1,6 +1,6 @@
 {
   "name": "dsh-context-ops",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DSH 上下文运维插件：交接技能 + 上下文决策/诊断技能 + 压力读数工具 + 斜杠命令。",
   "type": "module",
   "main": "lib/index.js",

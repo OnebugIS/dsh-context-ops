@@ -1,5 +1,5 @@
 # dsh-context-ops bundle patch
-# 1) 注册插件本体（技能 + context_pressure 工具 + /handoff /pressure 命令）
+# 1) 注册插件本体（技能 + context_pressure / context_history 两个工具 + /handoff /pressure /diagnose）
 # 2) 压缩摘要模型：本插件不写死任何账号/模型。如需把 /compact 摘要路由到指定模型，
 #    在你自己的 profile cordis.patch.yml 里给 compaction-basic 配（DSH 原生字段）：
 #
@@ -9,11 +9,14 @@
 #         summarizationModel: deepseek-v4-pro       # 换成你自己的 model
 #
 #    两个字段要么都空（默认 = 用当前会话模型），要么都填，否则 compaction-basic 会拒载。
-# 3) 插件自身配置（未知键会直接报错）：
-#    enablePressureTool: 是否注册 context_pressure 工具（需要 tokenMeter，缺失时自动跳过）
+# 3) 插件自身配置（未知键、类型写错都会直接报错）：
+#    enablePressureTool: 是否注册 context_pressure + context_history（需要 tokenMeter，缺失时自动跳过）
 #    enableCommands:     是否注册 /handoff /pressure /diagnose（需要 commands，缺失时自动跳过）
-#    enableReminder:     是否开启主动提醒（每轮首步压力 ≥ remindAt 时注入不落盘的 system-reminder，默认关）
+#    enableReminder:     是否开启主动提醒（压力 ≥ remindAt 时往宿主「运行时上下文」快照挂一句提示；默认关）
+#                        注意：不是伪造 user 消息，因此不会写进会话历史；文案只按档位变化，回落自动消失
 #    remindAt:           提醒阈值百分比（50–95，默认 85）
+# 4) 覆盖本行时注意：DSH 的 patch 是「同 id 整段替换 config」，不是合并。
+#    在 profile 里只写 remindAt 会把上面几个开关一起打回默认值——四个键要写全。
 - insert:
     - id: context-ops
       name: 'dsh-context-ops'

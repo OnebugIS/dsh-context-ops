@@ -38,7 +38,9 @@
 | Decision skill | `context-decision` | `lib/skills/decision.js` | Reads numbers → applies the ladder → gives **one** prescription |
 | Diagnosis skill | `context-diagnose` | `lib/skills/diagnose.js` | One check-up, layer by layer, **full report** |
 | Pressure tool | `context_pressure` | `lib/index.js` | Self-contained, reads DSH's built-in `tokenMeter` |
+| History tool | `context_history` | `lib/index.js` | Peak / last input-side tokens, compaction attempts / successes / failures |
 | Slash commands | `/handoff` `/pressure` `/diagnose` | `lib/index.js` | Explicit triggers (skipped when no `commands` service) |
+| Pressure reminder (opt-in) | `enableReminder` | `lib/index.js` | Adds one line to the host's runtime-context snapshot; never fakes a user message |
 | Compaction model | `compaction-basic` config | documented below | Native DSH fields; **no hard-coded provider/model** |
 
 ## Quick start
@@ -91,10 +93,13 @@ Called with no arguments, it returns:
   "pressureTokens": 82341,
   "surfaceTokens": 71022,
   "window": 131072,
+  "declaredWindow": 131072,
+  "realWindow": 1048576,
+  "windowInflated": false,
   "pct": 62.8,
   "cacheHitRate": 0.995,
   "provider": "zicode",
-  "model": "deepseek-v4-pro",
+  "model": "deepseek-flash",
   "note": ""
 }
 ```
@@ -103,15 +108,40 @@ Called with no arguments, it returns:
 |---|---|
 | `pressureTokens` | Total request-body tokens (the real compaction signal) |
 | `surfaceTokens` | Surface-only token count |
-| `window` | Real context window; `null` when unknown |
+| `window` | Effective window = `min(declaredWindow, realWindow)`; `null` when unknown |
+| `declaredWindow` | Window declared by the route / profile; `null` when unknown |
+| `realWindow` | The model's real limit (built-in window table); `null` for unknown models |
+| `windowInflated` | Inflated window = `declaredWindow > realWindow`; `null` when undecidable |
 | `pct` | Usage percent = `pressureTokens / window * 100`; `null` when window is unknown |
 | `cacheHitRate` | Cache hit rate (0–1) = `cacheReadTokens / (cacheReadTokens + uncachedInputTokens)`; `null` when unknown |
 | `provider` / `model` | Current route; empty string when unknown |
 | `note` | Error text when the reading failed; empty otherwise |
 
+> `windowInflated` catches the usual reason auto-compaction never fires: a 1M model declared as 2M keeps `pct` far below 50% forever. The tool clamps `window` to the real limit and raises the flag — **fixing the profile is the real cure**.
+>
+> The opposite case is legitimate: deliberately capping a large-window model (1M → 128k) yields `windowInflated=false` and `window` stays at the smaller value — it is never scaled up.
+
 > A high `cacheHitRate` (near 1) means the prefix is being reused — cheaper and faster first token. A persistently low rate means the context keeps being rewritten (or the provider does not cache), a signal to consider a fresh session.
+> It is a **session cumulative** figure: the first cold request is always 0% and dilutes as the session grows.
+
+> `windowInflated = null` means either the model is not in the built-in table, or this session has no routed window yet. **Both mean "undecidable" — never read it as false/safe.**
 
 > Use `pressureTokens ÷ window` for compaction decisions, **not** the `projectedTokens` shown in the UI (it under-reports).
+
+## History tool `context_history`
+
+Takes no arguments; returns session-level trend and compaction records:
+
+| Field | Meaning |
+|---|---|
+| `peakTokens` / `lastTokens` | Peak / last-request **input-side tokens** (input + cacheRead + cacheWrite, excluding output) |
+| `compactionCount` | Compaction attempts (`compaction/start`) |
+| `compactionSuccess` | Successful compactions (`compaction/summary`) |
+| `compactionError` | Failed compactions (`compaction/end` carrying `error`) |
+
+> `peakTokens` and `context_pressure.pressureTokens` are **not the same ruler**: the latter includes output budget plus tools/system prompt, so it is systematically larger. Compare trends, never subtract one from the other.
+
+> Why failures are counted that way: the host only persists `compaction/start` / `summary` / `end`, and a failure is recorded as `compaction/end.data.error`. `compaction/summary-error` is merely an in-memory waterfall hook name that never reaches the log — counting it would always yield 0.
 
 ## Slash commands
 
@@ -127,6 +157,13 @@ Called with no arguments, it returns:
 
 **Hard rule**: can compact ⇔ `pressureTokens < window × 0.95`.
 
+**⚠ This ladder is not the host's threshold.** DSH's own `compaction-basic` auto-compacts at
+`min(contextWindow × 0.8, contextWindow − reserved output − 65536)` — roughly **838k (80%)** for a 1M
+window and **~105k** for a 131k window. In normal automatic mode the "85% → prepare a handoff" band is
+usually unreachable: by the time you see 85%, compaction already happened. The ladder here is
+**advice** and does not change host behaviour; to move the trigger, configure `thresholdRatio` /
+`headroomTokens` on `compaction-basic` in your profile.
+
 **Three failure causes**:
 1. `context overflow` → switch to a larger-window model and retry, or hand off;
 2. `stream idle timeout` → do not retry; hand off;
@@ -141,20 +178,26 @@ flowchart LR
         T[tools registry]
         C[commands]
         M[tokenMeter]
+        SP[systemPrompt.context]
     end
     subgraph P["dsh-context-ops"]
         H["context-handoff"]
         D["context-decision"]
         G["context-diagnose"]
         PT["context_pressure"]
+        HT["context_history"]
         CM["/handoff · /pressure · /diagnose"]
+        RM["pressure reminder (opt-in)"]
     end
     H --> S
     D --> S
     G --> S
     PT --> T
+    HT --> T
     PT --> M
     CM --> C
+    RM --> SP
+    RM --> M
 ```
 
 ```mermaid
@@ -173,30 +216,38 @@ flowchart TD
 
 | Key | Default | Meaning |
 |---|---|---|
-| `enablePressureTool` | `true` | Register `context_pressure` (needs `tokenMeter`; skipped if missing) |
+| `enablePressureTool` | `true` | Register `context_pressure` + `context_history` (needs `tokenMeter`; skipped if missing) |
 | `enableCommands` | `true` | Register `/handoff` `/pressure` `/diagnose` (needs `commands`; skipped if missing) |
-| `enableReminder` | `false` | Active reminder: on the first step of a turn, when pressure ≥ `remindAt`, inject a non-persisted system-reminder |
+| `enableReminder` | `false` | Active reminder: when pressure ≥ `remindAt`, adds one line to the host's runtime-context snapshot |
 | `remindAt` | `85` | Reminder threshold percent (50–95) |
 
-Unknown keys raise an error (`unknown config key`) instead of being silently ignored.
+Unknown keys raise an error (`unknown config key`); known keys of the wrong type (e.g. `enableReminder: "true"`, `remindAt: "70"`) also raise, instead of silently inverting or falling back.
 
 ### Active reminder (optional)
 
-When enabled, the first step of each turn checks pressure; if `pct ≥ remindAt`, a `system-reminder` is appended to that request:
+When enabled it is evaluated on every request assembly: if `pct ≥ remindAt`, one `system-reminder` line is
+attached to the host's **runtime-context snapshot** (`ctx.systemPrompt.context()`).
 
-- **Not persisted**: it only enters the current request, never the session log, and never starts a new turn;
-- **Deduplicated**: once per session per band (85 / 95); resets when pressure falls back;
-- **Ignorable**: the text says it can be ignored and does not affect the conversation;
+- **No fake user message** — this is the key point. Injecting into `decision.messages` via `agent/pre-step` looks
+  non-persisted, but the host's `step()` appends every non-`runtime-context` message with
+  `session.append('user/message')`: the reminder would enter the session history, show up in the
+  conversation, and be re-sent on every later request — a context plugin inflating its own context.
+- **Text varies by band only**: no exact percentages or token counts (those would rewrite the snapshot every
+  single request). It changes when crossing a band (85 → 95) and disappears when pressure falls back.
+- **Ignorable**: the text says so and does not affect the conversation; it tells the model to call
+  `context_pressure` when it needs exact numbers.
 - **Off by default**: only active with `enableReminder: true`.
 
 ## Robustness
 
 | Situation | Behavior |
 |---|---|
-| `tokenMeter` missing | Only the `context_pressure` tool is skipped; all three skills still register |
-| `commands` missing | Only the slash commands are skipped; skills and tool are unaffected |
-| Tool called with no session | Returns empty values (`window: null` / `pct: null`) instead of throwing |
-| Reading fails | Returns empty values + a `note`; a reading failure never becomes a conversation failure |
+| `tokenMeter` missing | Both tools are skipped (no data source); all three skills still register |
+| `commands` missing | Only the slash commands are skipped; skills and tools are unaffected |
+| `systemPrompt` missing | Only the active reminder is skipped |
+| Tool called with no session | Empty values + `note: no session` (`pressureTokens` stays 0, so **the note matters**) |
+| Reading fails | Empty values + a `note`; a reading failure never becomes a conversation failure |
+| Reminder evaluation fails | Empty string (nothing injected) plus a `warn` log — code errors are not swallowed silently |
 
 ## Compaction model (optional)
 
@@ -216,8 +267,8 @@ Provide both fields or neither; otherwise `compaction-basic` refuses to load.
 ```
 dsh-context-ops/
 ├── lib/
-│   ├── index.js          entry: skills + context_pressure tool + slash commands
-│   ├── policy.js         shared constants (ladder / hard rule / failure causes / windows)
+│   ├── index.js          entry: skills + both tools + slash commands + opt-in reminder
+│   ├── policy.js         shared constants (ladder / host threshold / hard rule / failure causes / windows)
 │   └── skills/
 │       ├── handoff.js    handoff skill
 │       ├── decision.js   context decision skill
