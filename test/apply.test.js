@@ -118,7 +118,7 @@ test('提醒: 未到阈值给空串，到阈值给提示；同档文本完全一
   assert.match(at80, /70% 档/)
   assert.equal(text(850), at80, '同档位文本必须逐字相同，否则快照每轮重写')
   const at96 = text(960)
-  assert.match(at96, /95% 档/)
+  assert.match(at96, /92% 交接线/, '过交接线要切到强制交接文本')
   assert.equal(text(100), '', '回落后要自动消失')
 })
 

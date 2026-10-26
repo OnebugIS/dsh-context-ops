@@ -221,6 +221,7 @@ flowchart TD
 | `enableCommands` | `true` | 是否注册 `/handoff` `/pressure` `/diagnose`（需要 `commands`，缺失时自动跳过）|
 | `enableReminder` | `false` | 主动提醒：压力 ≥ `remindAt` 时，把一句提示挂进宿主「运行时上下文」快照 |
 | `remindAt` | `85` | 提醒阈值百分比（50–95）|
+| `handoffAt` | `92` | 强制交接线百分比（50–95）；压力 ≥ 此值时提醒升级为「自动执行交接」|
 
 未知键直接报错（`unknown config key`）；已知键类型写错（如 `enableReminder: "true"`、`remindAt: "70"`）也报错，不静默取反或回落。
 
@@ -229,6 +230,9 @@ flowchart TD
 开启后，每次装配请求时求值一次：`pct ≥ remindAt` 就把一句 `system-reminder` 挂进宿主的
 **运行时上下文快照**（`ctx.systemPrompt.context()`）。
 
+- **两档行为**：
+  - `pct ≥ remindAt`（默认 85%）→ **建议**压缩或交接；
+  - `pct ≥ handoffAt`（默认 92%）→ **强制交接**：提醒模型「上下文压力已过交接线，我现在自动执行交接、写出 `CHECKPOINT.md`」，先落盘再继续，避免等额度耗尽。
 - **不伪造 user 消息**：这是关键。走 `agent/pre-step` 往 `decision.messages` 里塞消息看着像「不落盘」，
   但宿主 `step()` 会把每一条非 `runtime-context` 的消息 `session.append('user/message')` ——
   提醒会进会话历史、出现在对话里、之后每个请求都重发，等于上下文插件自己给自己加压力。

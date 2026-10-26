@@ -56,16 +56,20 @@ test('resolveConfig: 默认值、开关与未知键', () => {
     enableCommands: true,
     enableReminder: false,
     remindAt: 85,
+    handoffAt: 92,
   })
   assert.deepEqual(resolveConfig({ enablePressureTool: false, enableReminder: true, remindAt: 70 }), {
     enablePressureTool: false,
     enableCommands: true,
     enableReminder: true,
     remindAt: 70,
+    handoffAt: 92,
   })
-  // remindAt 会被夹到 50–95
+  // remindAt / handoffAt 会被夹到 50–95
   assert.equal(resolveConfig({ remindAt: 10 }).remindAt, 50)
   assert.equal(resolveConfig({ remindAt: 120 }).remindAt, 95)
+  assert.equal(resolveConfig({ handoffAt: 10 }).handoffAt, 50)
+  assert.equal(resolveConfig({ handoffAt: 120 }).handoffAt, 95)
   assert.throws(() => resolveConfig({ nope: 1 }), /unknown config key/)
 })
 

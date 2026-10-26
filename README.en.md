@@ -220,6 +220,7 @@ flowchart TD
 | `enableCommands` | `true` | Register `/handoff` `/pressure` `/diagnose` (needs `commands`; skipped if missing) |
 | `enableReminder` | `false` | Active reminder: when pressure ≥ `remindAt`, adds one line to the host's runtime-context snapshot |
 | `remindAt` | `85` | Reminder threshold percent (50–95) |
+| `handoffAt` | `92` | Forced-handoff line percent (50–95); when pressure ≥ this value the reminder escalates to "execute the handoff automatically" |
 
 Unknown keys raise an error (`unknown config key`); known keys of the wrong type (e.g. `enableReminder: "true"`, `remindAt: "70"`) also raise, instead of silently inverting or falling back.
 
@@ -228,6 +229,9 @@ Unknown keys raise an error (`unknown config key`); known keys of the wrong type
 When enabled it is evaluated on every request assembly: if `pct ≥ remindAt`, one `system-reminder` line is
 attached to the host's **runtime-context snapshot** (`ctx.systemPrompt.context()`).
 
+- **Two tiers**:
+  - `pct ≥ remindAt` (default 85%) → **suggest** compaction or handoff;
+  - `pct ≥ handoffAt` (default 92%) → **forced handoff**: the model is told to announce that it is executing the handoff and write `CHECKPOINT.md` immediately, so work is saved before the budget runs out.
 - **No fake user message** — this is the key point. Injecting into `decision.messages` via `agent/pre-step` looks
   non-persisted, but the host's `step()` appends every non-`runtime-context` message with
   `session.append('user/message')`: the reminder would enter the session history, show up in the
