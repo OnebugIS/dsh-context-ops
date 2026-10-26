@@ -42,11 +42,11 @@
       "versions": [
         {
           "version": "0.1.0",
-          "publishTimestamp": 1793038857,
+          "publishTimestamp": 1793039794,
           "source": {
             "type": "git",
             "url": "https://github.com/OnebugIS/dsh-context-ops",
-            "commit": "e4a48f174ae47c8c070b92372e58ee40f7663643"
+            "commit": "7e69ed74fed02a33f8b614d8225e45b3522a216d"
           }
         }
       ]
