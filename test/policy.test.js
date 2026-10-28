@@ -120,6 +120,18 @@ test('context_pressure: measure 抛错时兜底', async () => {
   assert.match(out.note, /boom/)
 })
 
+test('windowFields: 声明窗口更小则 declared 是有效窗口来源', () => {
+  const w = windowFields('deepseek-v4-pro', 800000, 'zicode')
+  assert.deepEqual(w, {
+    window: 800000,
+    declaredWindow: 800000,
+    realWindow: 1048576,
+    windowInflated: false,
+    windowSource: 'declared',
+    routeKey: 'zicode/deepseek-v4-pro',
+  })
+})
+
 test('windowFields: 声明虚高 → 按真实上限收窄并标记', () => {
   // deepseek-flash 标称 1M，被配成 2M
   const w = windowFields('deepseek-flash', 2097152)
@@ -140,7 +152,7 @@ test('windowFields: 声明偏小是合法限制，不放大、不报虚高', () 
     declaredWindow: 131072,
     realWindow: 1048576,
     windowInflated: false,
-    windowSource: 'nominal',
+    windowSource: 'declared',
     routeKey: '/deepseek-flash',
   })
 })
