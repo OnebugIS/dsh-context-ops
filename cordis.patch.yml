@@ -15,8 +15,12 @@
 #    enableReminder:     是否开启主动提醒（压力 ≥ remindAt 时往宿主「运行时上下文」快照挂一句提示；默认关）
 #                        注意：不是伪造 user 消息，因此不会写进会话历史；文案只按档位变化，回落自动消失
 #    remindAt:           提醒阈值百分比（50–95，默认 85）
+#    handoffAt:          强制交接线百分比（50–95，默认 92）：压力过线时提醒升级为「自动执行交接」
+#    realWindows:        按 provider/model 填写针尖实测的安全窗口，例如 zicode/deepseek-v4-pro: 800000
+#                        键必须带 provider（同型号在不同线路容量不同）；不填则用内置标称值。
+#                        插件不猜 provider 是官方还是中转，只按你填的实测值算 pct。
 # 4) 覆盖本行时注意：DSH 的 patch 是「同 id 整段替换 config」，不是合并。
-#    在 profile 里只写 remindAt 会把上面几个开关一起打回默认值——四个键要写全。
+#    在 profile 里只写 realWindows 会把上面几个开关一起打回默认值——所有键要写全。
 - insert:
     - id: context-ops
       name: 'dsh-context-ops'
@@ -25,3 +29,5 @@
         enableCommands: true
         enableReminder: false
         remindAt: 85
+        handoffAt: 92
+        realWindows: {}

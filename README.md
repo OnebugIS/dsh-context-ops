@@ -39,7 +39,7 @@
 | 交接技能 | `context-handoff` | `lib/skills/handoff.js` | 产出 5 行 brief（目标/现状/下一步/未决/证据）到 `CHECKPOINT.md` |
 | 上下文决策技能 | `context-decision` | `lib/skills/decision.js` | 读数 → 套阶梯 → 给**一句**处方 |
 | 上下文诊断技能 | `context-diagnose` | `lib/skills/diagnose.js` | 一次体检，逐层核对，给**完整诊断报告** |
-| 压力读数工具 | `context_pressure` | `lib/index.js` | 自包含读数，数据来自 DSH 自带 `tokenMeter` |
+| 压力读数工具 | `context_pressure` | `lib/index.js` | 自包含读数 + 窗口证据（`windowSource` / `routeKey`） |
 | 历史/复盘工具 | `context_history` | `lib/index.js` | 峰值、最后一次输入侧 token、压缩尝试/成功/失败次数 |
 | 斜杠命令 | `/handoff` `/pressure` `/diagnose` | `lib/index.js` | 显式触发对应技能（`commands` 服务缺失时自动跳过） |
 | 主动提醒（可选） | `enableReminder` | `lib/index.js` | 压力过阈值时把一句提示挂进宿主「运行时上下文」快照，不伪造 user 消息 |
@@ -94,14 +94,16 @@ dsh plugin --profile <profile> add "file:/绝对路径/dsh-context-ops"
 {
   "pressureTokens": 82341,
   "surfaceTokens": 71022,
-  "window": 131072,
-  "declaredWindow": 131072,
-  "realWindow": 1048576,
-  "windowInflated": false,
-  "pct": 62.8,
+  "window": 800000,
+  "declaredWindow": 1048576,
+  "realWindow": 800000,
+  "windowInflated": true,
+  "windowSource": "override",
+  "routeKey": "zicode/deepseek-v4-pro",
+  "pct": 10.3,
   "cacheHitRate": 0.995,
   "provider": "zicode",
-  "model": "deepseek-flash",
+  "model": "deepseek-v4-pro",
   "note": ""
 }
 ```
@@ -112,16 +114,27 @@ dsh plugin --profile <profile> add "file:/绝对路径/dsh-context-ops"
 | `surfaceTokens` | 对话面 token |
 | `window` | 有效上下文窗口 = `min(declaredWindow, realWindow)`；未知时 `null` |
 | `declaredWindow` | 路由 / profile 声明的窗口；未知时 `null` |
-| `realWindow` | 该模型真实上限（内置窗口表）；型号不在表里时 `null` |
-| `windowInflated` | 窗口虚高 = `declaredWindow > realWindow`；无法判断时 `null` |
+| `realWindow` | 该路由的真实上限：**配置的实测值优先**，否则退回内置标称值；都未知时 `null` |
+| `windowInflated` | 声明窗口高于插件认定的上限（`declaredWindow > realWindow`）；含义随 `windowSource` 不同，见下 |
+| `windowSource` | 这个窗口数字的依据：`override` 实测配置 / `nominal` 内置标称 / `declared` 只有声明值 / `unknown` |
+| `routeKey` | 本会话路由键 `provider/model`，即 `realWindows` 里该用的键 |
 | `pct` | 占用百分比 = `pressureTokens / window * 100`；窗口未知时 `null` |
 | `cacheHitRate` | 缓存命中率（0–1）= `cacheReadTokens / (cacheReadTokens + uncachedInputTokens)`；未知时 `null` |
 | `provider` / `model` | 当前路由的 provider / model；未知时为空串 |
 | `note` | 读数失败时的错误说明；正常为空串 |
 
-> `windowInflated` 是「自动压缩永不触发」的元凶检测：把 1M 模型配成 2M 时，声明窗口虚高、pct 永远压不到 50%，`/compact` 也永远不会自动来。工具按真实上限收紧 `window` 并给出告警，**改 profile 才是根治**。
+> `windowInflated` 是「声明窗口超过插件认定的上限」的信号，**含义随 `windowSource` 变**：
+>
+> - `windowSource=nominal`：声明值高于型号标称值。宿主按声明窗口算自动压缩触发点，所以可能永远压不到 —— 属真·虚高，改 profile 或补实测值。
+> - `windowSource=override`：声明值高于你在这条线路的**实测安全值**。pct 已按实测值算，但**宿主自动压缩仍按声明值算**，触发点会比实测墙更晚。这时根治是把 profile 的 `contextWindow` 也改成实测值 —— 只填 `realWindows` 只修正了报告，没改宿主行为。
 >
 > 反过来把大窗口模型特意配小（如 1M 模型限到 128k）是合法限制：`windowInflated=false`，`window` 就是那个小值，不会被放大。
+
+> ⚠ **两把尺子**：`pct` 的分母是 `window`（可能被实测值收窄），宿主自动压缩的分母是 `declaredWindow`（声明值）。所以 `window` 被收窄后，别用「pct 已过 80% 而宿主没压」去推断自动压缩出了问题。
+
+> **插件不判断你的 provider 是官方还是中转**。`provider` 只是 profile 里的键名，插件看不到 baseURL，也不该猜：同一个型号在不同线路上容量可以不同（手册 §1.5）。所以 `windowSource=nominal` 只说明「这个数字来自内置标称值、尚未在本线路实测」，不等于「你走的是中转」。
+>
+> 想让 pct 按真实容量算，就在 `realWindows` 里按 `provider/model` 填一条实测安全值（用针尖测试，手册 §1.6；取实测值的 ~80%，手册 §1.2）。没填的线路一律退回标称值，行为和旧版一致。
 
 > `cacheHitRate` 高（接近 1）= 前缀被复用，便宜且首 token 快；持续偏低说明上下文在不断被改写（或 provider 不支持缓存），是「该换会话/重开」的信号。
 > 注意它是**全会话累计**：第一次冷请求必然 0% 命中，会话越长越被历史稀释。
@@ -222,8 +235,39 @@ flowchart TD
 | `enableReminder` | `false` | 主动提醒：压力 ≥ `remindAt` 时，把一句提示挂进宿主「运行时上下文」快照 |
 | `remindAt` | `85` | 提醒阈值百分比（50–95）|
 | `handoffAt` | `92` | 强制交接线百分比（50–95）；压力 ≥ 此值时提醒升级为「自动执行交接」|
+| `realWindows` | `{}` | 按 `provider/model` 填的实测安全窗口，见下 |
 
 未知键直接报错（`unknown config key`）；已知键类型写错（如 `enableReminder: "true"`、`remindAt: "70"`）也报错，不静默取反或回落。
+
+### 实测窗口 `realWindows`（可选）
+
+内置表只是**型号标称值**：同一个型号经不同线路/代理，容量可能不一样，所以标称值不能代表你的线路真能吃下。要按实测算 pct，就按 `provider/model` 填一条：
+
+```yaml
+- id: context-ops
+  name: 'dsh-context-ops'
+  config:
+    enablePressureTool: true
+    enableCommands: true
+    enableReminder: false
+    remindAt: 85
+    handoffAt: 92
+    realWindows:
+      zicode/deepseek-v4-pro: 800000
+      zicode/glm-5.3: 600000
+      deepseek-account/deepseek-v4-pro: 1048576
+```
+
+规则：
+
+- **键必须带 provider**（`provider/model`）。只写型号会报错——同一型号在不同线路容量不同，按型号覆盖会把一条线路的实测值错用到另一条上，比不填更糟。
+- 键可以直接用 `context_pressure` 返回的 `routeKey`，不用自己拼。
+- 值取**实测通过值的 ~80%**，别贴着实测上限（手册 §1.2）；插件会取整。
+- 有效窗口仍取 `min(声明窗口, 实测值)`：声明偏小时以声明为准，实测值不会把窗口放大。
+- 值填错（0、负数、字符串、只写型号）在加载时就报错，不会静默生效。
+- 没填的线路完全退回旧行为（标称值），所以升级不影响现有 profile。
+
+> ⚠ 注意 DSH patch 的语义是**同 id 整段替换 config**，不是合并：在 profile 里覆盖 `context-ops` 这一行时，其它键也要一起写全，否则会打回默认值。
 
 ### 主动提醒（可选）
 

@@ -37,7 +37,7 @@
 | Handoff skill | `context-handoff` | `lib/skills/handoff.js` | Writes a 5-line brief (goal / status / next / open / evidence) to `CHECKPOINT.md` |
 | Decision skill | `context-decision` | `lib/skills/decision.js` | Reads numbers → applies the ladder → gives **one** prescription |
 | Diagnosis skill | `context-diagnose` | `lib/skills/diagnose.js` | One check-up, layer by layer, **full report** |
-| Pressure tool | `context_pressure` | `lib/index.js` | Self-contained, reads DSH's built-in `tokenMeter` |
+| Pressure tool | `context_pressure` | `lib/index.js` | Self-contained; also reports window evidence (`windowSource` / `routeKey`) |
 | History tool | `context_history` | `lib/index.js` | Peak / last input-side tokens, compaction attempts / successes / failures |
 | Slash commands | `/handoff` `/pressure` `/diagnose` | `lib/index.js` | Explicit triggers (skipped when no `commands` service) |
 | Pressure reminder (opt-in) | `enableReminder` | `lib/index.js` | Adds one line to the host's runtime-context snapshot; never fakes a user message |
@@ -92,14 +92,16 @@ Called with no arguments, it returns:
 {
   "pressureTokens": 82341,
   "surfaceTokens": 71022,
-  "window": 131072,
-  "declaredWindow": 131072,
-  "realWindow": 1048576,
-  "windowInflated": false,
-  "pct": 62.8,
+  "window": 800000,
+  "declaredWindow": 1048576,
+  "realWindow": 800000,
+  "windowInflated": true,
+  "windowSource": "override",
+  "routeKey": "zicode/deepseek-v4-pro",
+  "pct": 10.3,
   "cacheHitRate": 0.995,
   "provider": "zicode",
-  "model": "deepseek-flash",
+  "model": "deepseek-v4-pro",
   "note": ""
 }
 ```
@@ -110,19 +112,29 @@ Called with no arguments, it returns:
 | `surfaceTokens` | Surface-only token count |
 | `window` | Effective window = `min(declaredWindow, realWindow)`; `null` when unknown |
 | `declaredWindow` | Window declared by the route / profile; `null` when unknown |
-| `realWindow` | The model's real limit (built-in window table); `null` for unknown models |
-| `windowInflated` | Inflated window = `declaredWindow > realWindow`; `null` when undecidable |
-| `pct` | Usage percent = `pressureTokens / window * 100`; `null` when window is unknown |
+| `realWindow` | Route limit: **the configured measured value wins**, otherwise the built-in nominal value; `null` when both are unknown |
+| `windowInflated` | The declared window exceeds the limit the plugin believes in (`declaredWindow > realWindow`); the meaning depends on `windowSource`, see below |
+| `windowSource` | Evidence for the number: `override` measured config / `nominal` built-in nominal / `declared` declaration only / `unknown` |
+| `routeKey` | Current route key `provider/model`, the key to use in `realWindows` |
+| `pct` | Usage percent = `pressureTokens / window * 100`; `null` when unknown |
 | `cacheHitRate` | Cache hit rate (0–1) = `cacheReadTokens / (cacheReadTokens + uncachedInputTokens)`; `null` when unknown |
 | `provider` / `model` | Current route; empty string when unknown |
 | `note` | Error text when the reading failed; empty otherwise |
 
-> `windowInflated` catches the usual reason auto-compaction never fires: a 1M model declared as 2M keeps `pct` far below 50% forever. The tool clamps `window` to the real limit and raises the flag — **fixing the profile is the real cure**.
+> **The plugin does not decide whether a provider is official or a relay.** `provider` is only a profile key; the plugin cannot see the base URL and must not guess. The same model can have different capacity on different routes (manual §1.5). `windowSource=nominal` only means the number is a built-in nominal value and has not been measured on this route.
 >
-> The opposite case is legitimate: deliberately capping a large-window model (1M → 128k) yields `windowInflated=false` and `window` stays at the smaller value — it is never scaled up.
+> To make `pct` use measured capacity, add a `provider/model` entry to `realWindows` using the needle test from manual §1.6 and a safe value around 80% of the measured pass (manual §1.2). Unconfigured routes fall back to the old nominal-table behavior.
 
 > A high `cacheHitRate` (near 1) means the prefix is being reused — cheaper and faster first token. A persistently low rate means the context keeps being rewritten (or the provider does not cache), a signal to consider a fresh session.
 > It is a **session cumulative** figure: the first cold request is always 0% and dilutes as the session grows.
+
+> `windowInflated` means the declared window exceeds the limit the plugin is using, but **interpret it with `windowSource`**:
+>
+> - `windowSource=nominal`: the declaration exceeds the model's nominal value. The host still uses the declared window for auto-compaction, so it may never trigger; fix the profile or add a route-specific measurement.
+> - `windowSource=override`: the declaration exceeds the **measured safe value** for this route. `pct` uses the measured value, but **host auto-compaction still uses the declaration**, so its trigger is later than the measured safety boundary. To fix host behavior too, set the profile `contextWindow` to the measured value; `realWindows` alone only corrects this plugin's reading.
+> - The opposite case is legitimate: deliberately capping a large-window model (1M → 128k) yields `windowInflated=false` and `window` stays at the smaller value.
+>
+> **Two rulers:** `pct` divides by `window` (which a measured value can narrow), while host auto-compaction divides by `declaredWindow`. When `window` is narrowed, do not infer that auto-compaction is broken just because `pct` passed 80% and nothing was compacted.
 
 > `windowInflated = null` means either the model is not in the built-in table, or this session has no routed window yet. **Both mean "undecidable" — never read it as false/safe.**
 
@@ -221,8 +233,39 @@ flowchart TD
 | `enableReminder` | `false` | Active reminder: when pressure ≥ `remindAt`, adds one line to the host's runtime-context snapshot |
 | `remindAt` | `85` | Reminder threshold percent (50–95) |
 | `handoffAt` | `92` | Forced-handoff line percent (50–95); when pressure ≥ this value the reminder escalates to "execute the handoff automatically" |
+| `realWindows` | `{}` | Measured safe windows keyed by `provider/model`; see below |
 
 Unknown keys raise an error (`unknown config key`); known keys of the wrong type (e.g. `enableReminder: "true"`, `remindAt: "70"`) also raise, instead of silently inverting or falling back.
+
+### Measured windows `realWindows` (optional)
+
+The built-in table holds **vendor nominal values**: the same model served through a different route or gateway may have a different usable capacity, so a nominal value does not prove your route accepts that much. To make `pct` reflect measured capacity, add an entry per `provider/model`:
+
+```yaml
+- id: context-ops
+  name: 'dsh-context-ops'
+  config:
+    enablePressureTool: true
+    enableCommands: true
+    enableReminder: false
+    remindAt: 85
+    handoffAt: 92
+    realWindows:
+      zicode/deepseek-v4-pro: 800000
+      zicode/glm-5.3: 600000
+      deepseek-account/deepseek-v4-pro: 1048576
+```
+
+Rules:
+
+- **Keys must include the provider** (`provider/model`). A bare model key raises an error: the same model differs per route, so a model-only override would apply one route's measurement to another, which is worse than not configuring it.
+- You can copy the key straight from `context_pressure`'s `routeKey`.
+- Use roughly **80% of the measured passing value**, not the measured ceiling (manual §1.2); the plugin rounds to an integer.
+- The effective window is still `min(declaredWindow, measured)`, so a smaller declared value wins and a measured value never enlarges the window.
+- Invalid values (0, negative, a string, a bare model key) fail at load time instead of silently taking effect.
+- Routes without an entry keep the previous behavior (nominal table), so upgrading does not change an existing profile.
+
+> ⚠ DSH patches **replace the whole `config` of a matching id**; they do not merge. When overriding the `context-ops` row in your profile, repeat every key, otherwise the others snap back to defaults.
 
 ### Active reminder (optional)
 

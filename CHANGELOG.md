@@ -2,6 +2,44 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.1.2] - 2026-10-28
+
+对齐《上下文管理：分层操作手册》2026-10-28 增补内容（§1.5 中转线路必须实测、§1.6 针尖测试、§3.1 overflow 即事实上限、§4.5 自动压缩参数、§5.1 五条交班触发、§7 避坑清单）。
+
+### 新增
+
+- **`realWindows` 配置**：按 `provider/model` 填写实测安全窗口，用于覆盖内置标称值。
+  - 键必须带 provider —— 同一型号在不同线路容量不同，只写型号会报错（宁可报错，也不要把一条线路的实测值错用到另一条）。
+  - 没配置的线路行为不变（退回标称值），升级不影响现有 profile。
+  - 实测值只是"天花板的上界提示"，有效窗口仍取 `min(声明窗口, 实测值)`，不会放大窗口。
+- **`context_pressure` 新增 `windowSource`**：说明窗口数字的证据来源（`override` 实测配置 / `nominal` 内置标称 / `declared` 仅声明值 / `unknown`）。
+  - 用途：让诊断能区分「这个百分比是按实测算的」和「这个百分比只是按标称值算的」，不再把两者混为一谈。
+- **`context_pressure` 新增 `routeKey`**：直接给出 `provider/model` 键，用户可原样粘进 `realWindows`，不用自己拼。
+- 诊断技能新增「窗口证据来源」段与告警项：`windowSource ≠ override` 时明确写「未实测」，并给出怎么实测、怎么填。
+
+### 修复（对齐手册新增判据）
+
+- **交班硬触发补第 4 条**：`400 Content Exists Risk`（内容审核锁死）。原来只有 4 条，漏了这条会导致在同会话里反复挣扎（避坑 #12）。
+- **自动压缩参数补 `retainRatio 0.16`**：报告里能解释「压完为什么还留着最近一段历史」。
+- **诊断告警补 3 条新坑**：错误码不可靠（网关把超长/超时/限流统一包装）、网关 body 上限（请求越大越慢不一定是模型问题）、网关抖动后不落盘（可能留下损坏历史）。
+- **压缩失败后的取证口径收紧**：原来会暗示「当前压力就是历史 overflow 的事实上限」；但插件只能数到失败次数，取不到那次失败请求的压力，现在明确要求从原始报错现场取数，拿不到就说「缺少事实上限证据」，不拿当前读数顶替。
+- **`windowInflated` 与宿主自动压缩解耦**：`realWindows` 填的是「实测安全值」而不是线路上限，宿主自动压缩却按**声明窗口**算触发点。因此不再把 `windowInflated=true` 一概说成「自动压缩永不触发」：`windowSource=nominal` 时才是真·虚高；`windowSource=override` 时表示声明值超过实测安全值、宿主触发点会更晚，根治是把 profile 的 `contextWindow` 也改成实测值。决策技能同步加上「两把尺子」约束，不再用 pct 反推自动压缩是否失效。
+
+### 明确不做（避免误导）
+
+- **不判断 provider 是官方还是中转**。插件只看得到 `provider` 这个 profile 键名，看不到 baseURL；靠域名猜会误判，猜错比不猜更糟。因此 `windowSource=nominal` 只表示「未实测」，不表示「你在用中转」。
+- **不自动从 session 事件反推线路上限**。宿主的 `compaction/*` 事件没有稳定的压力快照字段，自动反推会产出看起来精确、实则不可靠的窗口值。
+
+### 变更
+
+- `REAL_WINDOWS` 文案改为「标称值」并注明以 `window` + `windowSource` 为准。
+- `windowFields()` 增加 `provider` / `realWindows` 参数并返回 `windowSource`、`routeKey`（旧的两参数调用行为不变）。
+- `cordis.patch.yml` 补全 `handoffAt` 与 `realWindows` 默认值，并写明「同 id 整段替换 config」的注意事项。
+
+### 测试
+
+- 29 → 37：新增 realWindows 校验（键格式/正数/类型）、`routeKey` 与覆盖查找（含原型链键）、覆盖后 `windowSource`/`pct`/`windowInflated` 行为、未配置时退回标称、空路由、工具返回键与 schema 一致性、技能文本不得断言线路类型。
+
 ## [0.1.1] - 2026-10-27
 
 ### 修复（对外承诺与实际行为不符的三处）
