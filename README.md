@@ -114,7 +114,7 @@ dsh plugin --profile <profile> add "file:/绝对路径/dsh-context-ops"
 | `surfaceTokens` | 对话面 token |
 | `window` | 有效上下文窗口 = `min(declaredWindow, realWindow)`；未知时 `null` |
 | `declaredWindow` | 路由 / profile 声明的窗口；未知时 `null` |
-| `realWindow` | 该路由的真实上限：**配置的实测值优先**，否则退回内置标称值；都未知时 `null` |
+| `realWindow` | 该路由的容量上限估计：配置的实测值优先，否则退回内置标称值（型号通用规格，不代表当前线路实测支持）；都未知时 `null` |
 | `windowInflated` | 声明窗口高于插件认定的上限（`declaredWindow > realWindow`）；含义随 `windowSource` 不同，见下 |
 | `windowSource` | 这个窗口数字的依据：`override` 实测配置 / `nominal` 内置标称 / `declared` 只有声明值 / `unknown` |
 | `routeKey` | 本会话路由键 `provider/model`，即 `realWindows` 里该用的键 |
@@ -317,7 +317,7 @@ flowchart TD
 dsh-context-ops/
 ├── lib/
 │   ├── index.js          入口：注册技能 + 两个工具 + 斜杠命令 + 可选提醒
-│   ├── policy.js         统一策略常量（阶梯/宿主阈值/硬判据/三归因/真实窗口）
+│   ├── policy.js         统一策略常量（阶梯/宿主阈值/硬判据/三归因/标称窗口表）
 │   └── skills/
 │       ├── handoff.js    交接技能
 │       ├── decision.js   上下文决策技能

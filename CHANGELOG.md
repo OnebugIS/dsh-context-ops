@@ -2,6 +2,27 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.1.4] - 2026-10-30
+
+修正 `realWindow` 的字段文案：它未配置 `realWindows` 时返回的是型号**标称值**，原文案却称之为「真实上下文上限」，容易被读成实测读数，进而误判可以调高 profile 的 `contextWindow`。
+
+### 修复（仅文案，计算逻辑未动）
+
+- **`context_pressure` 工具 description**：「真实窗口 window」→「有效窗口 window（= min 声明值与该路由上限）」。
+- **`realWindow` 字段描述**：改为「该路由的容量上限估计：`realWindows` 配了实测值则用它，否则退回内置标称值（型号通用规格，不代表当前线路实测支持）」。
+- **诊断技能**：`min(声明窗口, 真实窗口)` → `min(声明窗口, realWindow)`，并补「**不是实测值**」。
+- **决策技能**：`min(声明窗口, 该路由真实上限)` → `min(声明窗口, realWindow)`（同一歧义，一并修）。
+- **README**：`realWindow` 字段表同步；项目结构里的「真实窗口」改为「标称窗口表」。
+
+### 不变
+
+- `windowFields()` 计算逻辑、`MODEL_REAL` 标称表、`window` / `pct` / `windowInflated` 取值**均未改动**。
+- `realWindows` 未配置时的行为与 0.1.3 一致。
+
+### 测试
+
+- 39 项（0.1.3 为 38）：新增「字段文案不得把标称值说成真实上限」，锁住 `realWindow` / `window` 两个字段描述里不得再出现「真实上下文上限」「真实窗口」。
+
 ## [0.1.3] - 2026-10-28
 
 修正 0.1.2 里 `windowSource` 的判定口径：它应当标记**实际限制有效窗口的那个值**，而不是「配置表里有什么」。

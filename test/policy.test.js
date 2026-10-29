@@ -373,3 +373,9 @@ test('技能文本写明窗口证据与实测覆盖，且不猜线路类型', ()
   assert.ok(DECISION_SKILL.content.includes('算触发点'), '决策要说明自动压缩按声明窗口算')
   assert.ok(DECISION_SKILL.content.includes('declaredWindow'), '决策要点名声明窗口字段')
 })
+
+test('字段文案不得把标称值说成真实上限', () => {
+  const d = pressureTool({}).output.schema.properties
+  assert.doesNotMatch(d.realWindow.description, /真实上下文上限/)
+  assert.doesNotMatch(d.window.description, /真实窗口/)
+})
