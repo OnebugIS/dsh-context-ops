@@ -13,9 +13,9 @@
 #    enablePressureTool: 是否注册 context_pressure + context_history（需要 tokenMeter，缺失时自动跳过）
 #    enableCommands:     是否注册 /handoff /pressure /diagnose（需要 commands，缺失时自动跳过）
 #    enableReminder:     是否开启主动提醒（压力 ≥ remindAt 时往宿主「运行时上下文」快照挂一句提示；默认关）
-#                        注意：不是伪造 user 消息，因此不会写进会话历史；文案只按档位变化，回落自动消失
+#                        不伪造 agent/pre-step user 消息；宿主仍可能持久化去重后的 runtime-context 快照
 #    remindAt:           提醒阈值百分比（50–95，默认 85）
-#    handoffAt:          强制交接线百分比（50–95，默认 92）：压力过线时提醒升级为「自动执行交接」
+#    handoffAt:          交接确认提示线（50–95，默认 92，必须 ≥ remindAt）：过线后暂停并请求确认，确认前不写 CHECKPOINT.md
 #    realWindows:        按 provider/model 填写针尖实测的安全窗口，例如 zicode/deepseek-v4-pro: 800000
 #                        键必须带 provider（同型号在不同线路容量不同）；不填则用内置标称值。
 #                        插件不猜 provider 是官方还是中转，只按你填的实测值算 pct。

@@ -2,9 +2,20 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.1.5] - 2026-10-30
+
+### 修复
+- 交接提醒不再要求未经确认自动写入 `CHECKPOINT.md`；统一为展示 brief、请求确认后再写盘。
+- 对 tokenMeter、缓存投影和历史 usage 的非法数字做安全降级；修正 cache-write 参与缓存口径。
+- 校验 `handoffAt >= remindAt`，修正窗口来源标签、压缩经验线和中英文文案。
+
+### 测试
+
+- 43 项测试全部通过。
+
 ## [0.1.4] - 2026-10-30
 
-修正 `realWindow` 的字段文案：它未配置 `realWindows` 时返回的是型号**标称值**，原文案却称之为「真实上下文上限」，容易被读成实测读数，进而误判可以调高 profile 的 `contextWindow`。
+本次审查加固：交接确认安全、坏读数降级、阈值关系校验、窗口来源与缓存口径修正；此前版本的 `realWindow` 字段文案也已修正：它未配置 `realWindows` 时返回的是型号**标称值**，原文案却称之为「真实上下文上限」，容易被读成实测读数，进而误判可以调高 profile 的 `contextWindow`。
 
 ### 修复（仅文案，计算逻辑未动）
 

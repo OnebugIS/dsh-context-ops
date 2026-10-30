@@ -117,7 +117,7 @@ Called with no arguments, it returns:
 | `windowSource` | Evidence for the number: `override` measured config / `nominal` built-in nominal / `declared` declaration only / `unknown` |
 | `routeKey` | Current route key `provider/model`, the key to use in `realWindows` |
 | `pct` | Usage percent = `pressureTokens / window * 100`; `null` when unknown |
-| `cacheHitRate` | Cache hit rate (0–1) = `cacheReadTokens / (cacheReadTokens + uncachedInputTokens)`; `null` when unknown |
+| `cacheHitRate` | Read-cache share of input cache buckets (0–1) = `cacheReadTokens / (cacheReadTokens + cacheWriteTokens + uncachedInputTokens)`; `null` when unknown |
 | `provider` / `model` | Current route; empty string when unknown |
 | `note` | Error text when the reading failed; empty otherwise |
 
@@ -167,11 +167,11 @@ Takes no arguments; returns session-level trend and compaction records:
 
 ![Context pressure ladder](assets/ladder.svg)
 
-**Hard rule**: can compact ⇔ `pressureTokens < window × 0.95`.
+**Experience line (not a success guarantee)**: when no additional failure evidence exists, `pressureTokens < window × 0.95` means compaction is worth attempting; it does not guarantee success. Summary-model limits, output budget, gateway body limits, timeouts, or a non-smaller summary can still fail.
 
 **⚠ This ladder is not the host's threshold.** DSH's own `compaction-basic` auto-compacts at
 `min(contextWindow × 0.8, contextWindow − reserved output − 65536)` — roughly **838k (80%)** for a 1M
-window and **~105k** for a 131k window. In normal automatic mode the "85% → prepare a handoff" band is
+window; for a 131k window, the 65,536-token headroom alone caps the threshold at **~65,536**, before any reserved output. In normal automatic mode the "85% → prepare a handoff" band is
 usually unreachable: by the time you see 85%, compaction already happened. The ladder here is
 **advice** and does not change host behaviour; to move the trigger, configure `thresholdRatio` /
 `headroomTokens` on `compaction-basic` in your profile.
@@ -232,7 +232,7 @@ flowchart TD
 | `enableCommands` | `true` | Register `/handoff` `/pressure` `/diagnose` (needs `commands`; skipped if missing) |
 | `enableReminder` | `false` | Active reminder: when pressure ≥ `remindAt`, adds one line to the host's runtime-context snapshot |
 | `remindAt` | `85` | Reminder threshold percent (50–95) |
-| `handoffAt` | `92` | Forced-handoff line percent (50–95); when pressure ≥ this value the reminder escalates to "execute the handoff automatically" |
+| `handoffAt` | `92` | Handoff confirmation prompt percent (50–95, must be ≥ `remindAt`); at or above it pauses and requests confirmation before writing `CHECKPOINT.md` |
 | `realWindows` | `{}` | Measured safe windows keyed by `provider/model`; see below |
 
 Unknown keys raise an error (`unknown config key`); known keys of the wrong type (e.g. `enableReminder: "true"`, `remindAt: "70"`) also raise, instead of silently inverting or falling back.
@@ -274,7 +274,9 @@ attached to the host's **runtime-context snapshot** (`ctx.systemPrompt.context()
 
 - **Two tiers**:
   - `pct ≥ remindAt` (default 85%) → **suggest** compaction or handoff;
-  - `pct ≥ handoffAt` (default 92%) → **forced handoff**: the model is told to announce that it is executing the handoff and write `CHECKPOINT.md` immediately, so work is saved before the budget runs out.
+  - `pct ≥ handoffAt` (default 92%) → **pause and request confirmation**: the model must show the five-line brief and ask for confirmation; it must not write `CHECKPOINT.md` or claim an automatic handoff before confirmation.
+- **The confirmation gate cannot be bypassed**: the reminder is only a pause/suggestion signal and does not change the `context-handoff` confirmation rule.
+- **Runtime-context persistence**: the reminder does not fake a user message, but the host may persist a deduplicated runtime-context snapshot as a `user/message` event. The plugin only avoids repeated `agent/pre-step` appends; it does not promise that the snapshot is never persisted.
 - **No fake user message** — this is the key point. Injecting into `decision.messages` via `agent/pre-step` looks
   non-persisted, but the host's `step()` appends every non-`runtime-context` message with
   `session.append('user/message')`: the reminder would enter the session history, show up in the

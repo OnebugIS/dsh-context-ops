@@ -118,7 +118,10 @@ test('提醒: 未到阈值给空串，到阈值给提示；同档文本完全一
   assert.match(at80, /70% 档/)
   assert.equal(text(850), at80, '同档位文本必须逐字相同，否则快照每轮重写')
   const at96 = text(960)
-  assert.match(at96, /92% 交接线/, '过交接线要切到强制交接文本')
+  assert.match(at96, /92% 交接线/)
+  assert.match(at96, /ask_user_question/)
+  assert.match(at96, /确认后才可写入 CHECKPOINT\.md/)
+  assert.doesNotMatch(at96, /自动执行交接|我现在自动执行/)
   assert.equal(text(100), '', '回落后要自动消失')
 })
 
@@ -163,6 +166,18 @@ test('context_history: 压缩失败数 compaction/end 的 error，不数不存�
   assert.equal(out.compactionError, 1, '失败必须以 compaction/end.data.error 计')
   assert.equal(out.peakTokens, 1050, '输入侧 = input + cacheRead + cacheWrite')
   assert.equal(out.lastTokens, 35)
+})
+
+test('context_history: 非法 usage 会跳过并说明 note', async () => {
+  const events = [
+    { type: 'assistant/message', data: { usage: { inputTokens: '100', cacheReadTokens: 20, cacheWriteTokens: 0 } } },
+    { type: 'assistant/message', data: { usage: { inputTokens: 10, cacheReadTokens: 20, cacheWriteTokens: NaN } } },
+    { type: 'assistant/message', data: { usage: { inputTokens: 10, cacheReadTokens: 20, cacheWriteTokens: 5 } } },
+  ]
+  const out = await historyTool({}).execute({}, { agent: { session: { snapshotEvents: () => events } } })
+  assert.equal(out.peakTokens, 35)
+  assert.equal(out.lastTokens, 35)
+  assert.match(out.note, /invalid usage/)
 })
 
 test('context_history: 无会话时给出 note，不假装 0', async () => {

@@ -53,6 +53,7 @@ test('context_pressure 工具 schema 合法，window/pct 可空', () => {
 
 test('policy 常量非空且稳定', () => {
   assert.ok(HARD_RULE.includes('0.95'))
+  assert.ok(HARD_RULE.includes('非成功保证'))
   assert.ok(FAILURE_ATTRIBUTION.includes('summary is not smaller'))
   assert.ok(REAL_WINDOWS.includes('1,048,576'))
   assert.ok(WINDOW_EVIDENCE.includes('override'), '窗口证据来源要写明 override')
@@ -77,10 +78,15 @@ test('resolveConfig: 默认值、开关与未知键', () => {
   })
   // remindAt / handoffAt 会被夹到 50–95
   assert.equal(resolveConfig({ remindAt: 10 }).remindAt, 50)
-  assert.equal(resolveConfig({ remindAt: 120 }).remindAt, 95)
-  assert.equal(resolveConfig({ handoffAt: 10 }).handoffAt, 50)
+  assert.equal(resolveConfig({ remindAt: 90 }).remindAt, 90)
+  assert.equal(resolveConfig({ remindAt: 120, handoffAt: 95 }).remindAt, 95)
+  assert.equal(resolveConfig({ handoffAt: 10, remindAt: 50 }).handoffAt, 50)
   assert.equal(resolveConfig({ handoffAt: 120 }).handoffAt, 95)
+  assert.throws(() => resolveConfig({ remindAt: 90, handoffAt: 80 }), /handoffAt.*greater than or equal.*remindAt/)
+  assert.throws(() => resolveConfig({ remindAt: 95, handoffAt: 50 }), /handoffAt.*greater than or equal.*remindAt/)
   assert.throws(() => resolveConfig({ nope: 1 }), /unknown config key/)
+  assert.throws(() => resolveConfig([]), /config must be an object/)
+  assert.throws(() => resolveConfig('bad'), /config must be an object/)
 })
 
 test('context_pressure: 从 tokenUsage 投影算缓存命中率', async () => {
@@ -90,7 +96,7 @@ test('context_pressure: 从 tokenUsage 投影算缓存命中率', async () => {
       if (name !== 'sessionProjections') return undefined
       return {
         stateOf: () => ({
-          totals: { cacheReadTokens: 900, uncachedInputTokens: 100, outputTokens: 0, cacheWriteTokens: 0 },
+          totals: { cacheReadTokens: 900, uncachedInputTokens: 100, cacheWriteTokens: 0, outputTokens: 0 },
         }),
       }
     },
@@ -118,6 +124,40 @@ test('context_pressure: measure 抛错时兜底', async () => {
   const out = await tool.execute({}, { agent: { session: {} } })
   assert.equal(out.pressureTokens, 0)
   assert.match(out.note, /boom/)
+})
+
+test('context_pressure: 非法 token 读数不泄漏 NaN/Infinity/字符串', async () => {
+  for (const measurement of [
+    { totalTokens: NaN, surfaceTokens: 1 },
+    { totalTokens: Infinity, surfaceTokens: 1 },
+    { totalTokens: '100', surfaceTokens: 1 },
+    { totalTokens: 100, surfaceTokens: -1 },
+  ]) {
+    const tool = pressureTool({ tokenMeter: { measure: () => measurement } })
+    const out = await tool.execute({}, { agent: { session: { requestContext: () => ({ contextWindow: 1000, provider: 'p', model: 'm' }) } } })
+    assert.equal(out.pct, null, JSON.stringify(measurement))
+    assert.match(out.note, /invalid token counts/)
+    assert.ok(Number.isFinite(out.pressureTokens))
+    assert.ok(Number.isFinite(out.surfaceTokens))
+  }
+})
+
+test('context_pressure: cache-write 不计入读取命中率', async () => {
+  const tool = pressureTool({
+    tokenMeter: { measure: () => ({ totalTokens: 100, surfaceTokens: 1 }) },
+    get: () => ({ stateOf: () => ({ totals: { cacheReadTokens: 100, cacheWriteTokens: 900, uncachedInputTokens: 0 } }) }),
+  })
+  const out = await tool.execute({}, { agent: { session: { requestContext: () => ({ contextWindow: 1000, provider: 'p', model: 'm' }) } } })
+  assert.equal(out.cacheHitRate, 0.1)
+})
+
+test('context_pressure: 非法缓存投影返回 null', async () => {
+  const tool = pressureTool({
+    tokenMeter: { measure: () => ({ totalTokens: 100, surfaceTokens: 1 }) },
+    get: () => ({ stateOf: () => ({ totals: { cacheReadTokens: '900', uncachedInputTokens: 100 } }) }),
+  })
+  const out = await tool.execute({}, { agent: { session: { requestContext: () => ({ contextWindow: 1000, provider: 'p', model: 'm' }) } } })
+  assert.equal(out.cacheHitRate, null)
 })
 
 test('windowFields: 声明窗口更小则 declared 是有效窗口来源', () => {
@@ -344,8 +384,8 @@ test('context_pressure: 实际返回的键必须在 schema 里（additionalPrope
   const tool = pressureTool(ctx)
   const declared = new Set(Object.keys(tool.output.schema.properties))
   const cases = [
-    { session: { requestContext: () => ({ contextWindow: 131072, provider: 'p', model: 'glm-5.3' }) } },
-    { session: { requestContext: () => ({}) } },
+    { agent: { session: { requestContext: () => ({ contextWindow: 131072, provider: 'p', model: 'glm-5.3' }) } } },
+    { agent: { session: { requestContext: () => ({}) } } },
     {},
   ]
   for (const exec of cases) {

@@ -119,7 +119,7 @@ dsh plugin --profile <profile> add "file:/绝对路径/dsh-context-ops"
 | `windowSource` | 这个窗口数字的依据：`override` 实测配置 / `nominal` 内置标称 / `declared` 只有声明值 / `unknown` |
 | `routeKey` | 本会话路由键 `provider/model`，即 `realWindows` 里该用的键 |
 | `pct` | 占用百分比 = `pressureTokens / window * 100`；窗口未知时 `null` |
-| `cacheHitRate` | 缓存命中率（0–1）= `cacheReadTokens / (cacheReadTokens + uncachedInputTokens)`；未知时 `null` |
+| `cacheHitRate` | 读取缓存占输入缓存桶的比例（0–1）= `cacheReadTokens / (cacheReadTokens + cacheWriteTokens + uncachedInputTokens)`；未知时 `null` |
 | `provider` / `model` | 当前路由的 provider / model；未知时为空串 |
 | `note` | 读数失败时的错误说明；正常为空串 |
 
@@ -170,11 +170,11 @@ dsh plugin --profile <profile> add "file:/绝对路径/dsh-context-ops"
 
 ![上下文压力阶梯](assets/ladder.svg)
 
-**硬判据**：能压缩 ⇔ `pressureTokens < window × 0.95`。
+**经验线（不是成功保证）**：在没有额外失败证据时，`pressureTokens < window × 0.95` 表示具备尝试压缩条件；不等于现在执行一定成功。摘要模型、输出预算、网关 body 限制、超时和“摘要没有变小”等因素仍可能导致失败。
 
 **⚠ 但这张表不是宿主的阈值。** DSH 自己的 `compaction-basic` 默认在
 `min(contextWindow × 0.8, contextWindow − 预留 output − 65536)` 就自动压缩——
-1M 窗口约 **838k（80%）**、131k 窗口约 **105k**。也就是说正常自动模式下，「85% 才准备交接」这一档
+1M 窗口在无额外 output 预留时约 **838k（80%）**；131k 窗口受 64K headroom 限制时上限约 **65,536**，实际还可能因 output 预留更低。也就是说正常自动模式下，「85% 才准备交接」这一档
 通常轮不到人动手：等你看到 85%，压缩早已发生。本插件的阶梯是**建议**，不改变宿主行为；
 要改触发点，去 profile 里配 `compaction-basic` 的 `thresholdRatio` / `headroomTokens`。
 
@@ -234,7 +234,7 @@ flowchart TD
 | `enableCommands` | `true` | 是否注册 `/handoff` `/pressure` `/diagnose`（需要 `commands`，缺失时自动跳过）|
 | `enableReminder` | `false` | 主动提醒：压力 ≥ `remindAt` 时，把一句提示挂进宿主「运行时上下文」快照 |
 | `remindAt` | `85` | 提醒阈值百分比（50–95）|
-| `handoffAt` | `92` | 强制交接线百分比（50–95）；压力 ≥ 此值时提醒升级为「自动执行交接」|
+| `handoffAt` | `92` | 交接提示线百分比（50–95，必须 ≥ `remindAt`）；压力 ≥ 此值时暂停任务、展示 brief 并请求确认，不会绕过确认自动写盘 |
 | `realWindows` | `{}` | 按 `provider/model` 填的实测安全窗口，见下 |
 
 未知键直接报错（`unknown config key`）；已知键类型写错（如 `enableReminder: "true"`、`remindAt: "70"`）也报错，不静默取反或回落。
@@ -276,7 +276,9 @@ flowchart TD
 
 - **两档行为**：
   - `pct ≥ remindAt`（默认 85%）→ **建议**压缩或交接；
-  - `pct ≥ handoffAt`（默认 92%）→ **强制交接**：提醒模型「上下文压力已过交接线，我现在自动执行交接、写出 `CHECKPOINT.md`」，先落盘再继续，避免等额度耗尽。
+  - `pct ≥ handoffAt`（默认 92%）→ **暂停并请求确认**：提醒模型展示五行 brief，并用 `ask_user_question` 请求用户确认；确认前不得写 `CHECKPOINT.md`，也不得宣称已自动交接。
+- **确认闸不可绕过**：主动提醒只是建议/暂停信号，不改变 `context-handoff` 的「用户确认后写盘」规则。
+- **运行时上下文的持久化**：提醒不伪造 user 消息，但宿主可能把 runtime-context 快照以去重后的 user/message 事件持久化；本插件只保证不通过 `agent/pre-step` 每轮重复追加，不承诺“绝不落历史”。
 - **不伪造 user 消息**：这是关键。走 `agent/pre-step` 往 `decision.messages` 里塞消息看着像「不落盘」，
   但宿主 `step()` 会把每一条非 `runtime-context` 的消息 `session.append('user/message')` ——
   提醒会进会话历史、出现在对话里、之后每个请求都重发，等于上下文插件自己给自己加压力。
