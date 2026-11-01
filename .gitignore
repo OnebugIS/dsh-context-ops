@@ -10,3 +10,4 @@ npm-debug.log*
 pnpm-debug.log*
 .idea/
 .vscode/
+rollback/

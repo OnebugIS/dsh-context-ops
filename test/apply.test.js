@@ -1,6 +1,7 @@
 /** apply() 注册路径测试：技能 / 工具 / 命令 / 主动提醒，以及各自缺失时的降级。 */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { apply, historyTool } from '../lib/index.js'
 
 /**
@@ -8,7 +9,7 @@ import { apply, historyTool } from '../lib/index.js'
  * @param {{commands?: boolean, tokenMeter?: object|null, systemPrompt?: boolean, config?: object}} opts
  */
 function mockCtx(opts = {}) {
-  const state = { skills: [], tools: [], commands: [], contexts: [], listeners: new Map(), warns: [] }
+  const state = { skills: [], tools: [], commands: [], contexts: [], projections: [], listeners: new Map(), warns: [] }
   const ctx = {
     skills: { register: (s) => (state.skills.push(s), () => {}) },
     tools: { register: (t) => (state.tools.push(t), () => {}) },
@@ -18,6 +19,10 @@ function mockCtx(opts = {}) {
         ? undefined
         : { context: (c) => (state.contexts.push(c), () => {}) },
     tokenMeter: opts.tokenMeter === undefined ? { measure: () => ({ totalTokens: 0, surfaceTokens: 0 }) } : opts.tokenMeter,
+    sessionProjections:
+      opts.sessionProjections === false
+        ? undefined
+        : { register: (def) => (state.projections.push(def), () => {}) },
     effect(fn) {
       fn()
     },
@@ -96,57 +101,64 @@ test('apply: 开关全关时只剩技能', () => {
   assert.equal(state.commands.length, 0)
 })
 
-test('提醒: 注册成运行时上下文，不是伪造 user 消息', () => {
+test('人可见提醒：Host 不再注册运行时上下文，Client banner 读取 contextPressure projection', () => {
   const { ctx, state } = mockCtx()
-  apply(ctx, { enableReminder: true, remindAt: 70 })
-  assert.equal(state.contexts.length, 1)
-  const entry = state.contexts[0]
-  assert.equal(entry.name, 'context-ops:pressure-reminder')
-  assert.ok(Number.isFinite(entry.order), 'order 必须是有限数')
-  assert.equal(typeof entry.text, 'function', 'text 要能每次装配重新求值')
+  apply(ctx, { enableReminder: true, remindAt: 60 })
+  assert.equal(state.contexts.length, 0, '不再把提醒注入隐藏 runtime-context')
   assert.equal(state.listeners.has('agent/pre-step'), false)
+  const client = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(client, /conversation\.input\.dock/)
+  assert.match(client, /useProjection\('contextPressure'\)/)
+  assert.match(client, /useProjection\('contextOpsReminderConfig'\)/)
+  assert.match(client, /useProjection\('contextOpsCompactionSignal'\)/)
+  // 优先 projectedTokens（压缩后会先回落的那个估算值），pressureTokens 只作回退。
+  assert.match(client, /pressure\?\.projectedTokens/)
+  assert.match(client, /pressure\?\.pressureTokens/)
+  assert.match(client, /reminder\.handoffAt/)
+  assert.match(client, /reminder\.remindAt/)
+  // 四态必须存在：不能把「读数不可用」当成「压力回落」，否则 toast 会被误清后复活。
+  assert.match(client, /'unknown'/)
+  assert.match(client, /'low'/)
 })
 
-test('提醒: 未到阈值给空串，到阈值给提示；同档文本完全一致（不抖动快照）', () => {
-  const tok = { n: 0 }
-  const { ctx, state } = mockCtx({ tokenMeter: { measure: () => ({ totalTokens: tok.n, surfaceTokens: 1 }) } })
-  apply(ctx, { enableReminder: true, remindAt: 70 })
-  const text = (n) => ((tok.n = n), state.contexts[0].text({ agent: { session: session(1000) } }))
+test('reminder projection: 旧会话缓存不得把阈值带回旧值（state 留空 + view 现算）', () => {
+  const { ctx, state } = mockCtx()
+  apply(ctx, { enableReminder: true, remindAt: 80, handoffAt: 95 })
 
-  assert.equal(text(600), '', '60% 不该提醒')
-  const at80 = text(800)
-  assert.match(at80, /70% 档/)
-  assert.equal(text(850), at80, '同档位文本必须逐字相同，否则快照每轮重写')
-  const at96 = text(960)
-  assert.match(at96, /92% 交接线/)
-  assert.match(at96, /ask_user_question/)
-  assert.match(at96, /确认后才可写入 CHECKPOINT\.md/)
-  assert.doesNotMatch(at96, /自动执行交接|我现在自动执行/)
-  assert.equal(text(100), '', '回落后要自动消失')
+  const def = state.projections.find((p) => p.key === 'contextOpsReminderConfig')
+  assert.ok(def, 'enableReminder: true 时必须注册 contextOpsReminderConfig 投影')
+  assert.equal(def.stateVersion, 2, 'state 语义变了就要升版本号，否则旧缓存行会被 parse 后继续生效')
+
+  // 宿主恢复路径：stateSchema.parse(行里的旧值)，不是 init()。
+  // 旧版本缓存里带着 remindAt: 60；state 留空后它落不进任何可读字段。
+  const restored = def.stateSchema.parse({ enabled: true, remindAt: 60, handoffAt: 92 })
+  assert.deepEqual(restored, {}, 'state 不得保留阈值，否则老会话会永久沿用旧值')
+
+  // view 只反映当前进程配置（80/95），不是缓存里的 60/92。
+  assert.deepEqual(def.wire.view(def.apply(restored, {})), { enabled: true, remindAt: 80, handoffAt: 95 })
 })
 
-test('提醒: 文本里不放精确百分比（否则每轮都要重写快照）', () => {
-  const { ctx, state } = mockCtx({ tokenMeter: meter(838861) })
-  apply(ctx, { enableReminder: true, remindAt: 70 })
-  const out = state.contexts[0].text({ agent: { session: session(1048576) } })
-  assert.doesNotMatch(out, /\d+\.\d+%/, '不该出现 80.0% 这类会变的小数')
-  assert.doesNotMatch(out, /838861/, '不该出现 token 绝对值')
+test('compaction signal projection: 只累计 compaction/start，其他事件不变', () => {
+  const { ctx, state } = mockCtx()
+  apply(ctx, { enableReminder: true })
+
+  const def = state.projections.find((p) => p.key === 'contextOpsCompactionSignal')
+  assert.ok(def, 'enableReminder: true 时必须注册压缩信号投影')
+  assert.equal(def.stateVersion, 1)
+  const initial = def.init()
+  assert.deepEqual(initial, { startCount: 0 })
+  assert.deepEqual(def.apply(initial, { type: 'assistant/message' }), { startCount: 0 })
+  const once = def.apply(initial, { type: 'compaction/start' })
+  assert.deepEqual(once, { startCount: 1 })
+  assert.deepEqual(def.apply(once, { type: 'compaction/summary' }), { startCount: 1 })
+  assert.deepEqual(def.wire.view(once), { startCount: 1 })
 })
 
-test('提醒: 无窗口 / 无会话 / 读数抛错 都退化成空串，且留 warn', () => {
-  const { ctx, state } = mockCtx({
-    tokenMeter: {
-      measure: () => {
-        throw new Error('boom')
-      },
-    },
-  })
-  apply(ctx, { enableReminder: true, remindAt: 70 })
-  const entry = state.contexts[0]
-  assert.equal(entry.text({ agent: undefined }), '')
-  assert.equal(entry.text({ agent: { session: { requestContext: () => ({}) } } }), '')
-  assert.equal(entry.text({ agent: { session: session(1000) } }), '')
-  assert.ok(state.warns.some((w) => w.includes('reminder skipped')), '读数失败要留 warn，不能静默')
+test('reminder projection: 没有 sessionProjections 服务时静默降级', () => {
+  const { ctx, state } = mockCtx({ sessionProjections: false })
+  assert.doesNotThrow(() => apply(ctx, { enableReminder: true }))
+  assert.equal(state.projections.length, 0)
+  assert.equal(state.skills.length, 3)
 })
 
 test('context_history: 压缩失败数 compaction/end 的 error，不数不存在的 summary-error', async () => {

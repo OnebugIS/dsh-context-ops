@@ -2,6 +2,38 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.1.6] - 2026-10-31
+
+### 新增
+
+- 第一阶段人可见上下文提醒：Web Client 在当前会话输入区显示 60%/92% banner。
+- 读取宿主已有 `contextPressure` projection，使用 `pressureTokens / contextWindow`，不新增 Session 事件、不写入聊天历史。
+- `enableReminder`、`remindAt`、`handoffAt` 通过 `contextOpsReminderConfig` projection 传给 Client，profile 配置变更无需写死到 Client。
+- 增加 Client 入口与 `conversation.input.dock` session-scoped slot 注册。
+
+### 变更
+
+- 移除旧的 `systemPrompt.context()` 隐藏提醒注入；提醒现在由 Web Client 显示给人。
+- 92% 仍只显示交接提示，不自动写 `CHECKPOINT.md`；继续使用现有确认式交接流程。
+
+### 修复
+
+- 交接档隐藏后降档再升回时不再漏弹：档位一变（升档 / 降档 / 回落）就清掉隐藏状态并重开 60 秒计时，
+  不再只在「回落到阈值以下」时重置（旧实现里 `hiddenBand` 仍是 `handoff`，会吞掉本该弹的交接提醒）。
+- 提醒阈值不再随会话缓存回退：投影 state 改为空对象，`remindAt` / `handoffAt` 每次由当前进程配置现算
+  （旧实现把阈值存进 state，宿主恢复会话时走 `stateSchema.parse(旧缓存)`，改过 profile 后老会话会永久沿用旧阈值）。
+- 关闭 App 期间走完的截止时间不再被重新计时：重打开始终按原 `expiresAt` 判定，
+  过期即视为已退出（旧实现把一个已过期的 `expiresAt` 当成缺失，又弹 60 秒）。
+- 读数不可用不再被当成压力回落：Band 从两态改为四态（`disabled` / `unknown` / `low` / 各档），
+  只有「有效读数确实低于阈值」或「配置关闭」才清状态。投影未加载、断线、字段非法都不再清记录，
+  否则数据恢复后已退出的提醒会复活（用户报的「重启后 toast 还在」的另一条复现路径）。
+- 新增 `contextOpsCompactionSignal`：Host 按 session 事件累计 `compaction/start`，Client 收到新信号后立即收起当前 toast，
+  不再等待 60 秒；压缩导致降档时不换档重弹，等有效读数回落后重新武装。
+
+### 测试
+
+- 55 项测试通过；新增 Client banner 行为测试（用受控假时钟驱动真实 `client.js`，且时钟同时控制 `setTimeout` 与 `Date.now()`：60 秒退出、档位往返不漏弹、组件重挂载沿用 session 状态、关闭期间过期不复活、读数缺失不误清、`projectedTokens` 优先且非法回退、`compaction/start` 即时收起、历史计数只作基线、压缩降档不重弹、回落重武装）与 reminder/compaction projection 回归检查；原先对 `client.js` 的正则断言降级为辅助。
+
 ## [0.1.5] - 2026-10-30
 
 ### 修复
