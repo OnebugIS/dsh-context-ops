@@ -6,14 +6,14 @@
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square">
   <img alt="node" src="https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square">
   <img alt="dsh-plugin" src="https://img.shields.io/badge/dsh-plugin-5b8cff?style=flat-square">
-  <img alt="dependencies" src="https://img.shields.io/badge/dependencies-0-brightgreen?style=flat-square">
+  <img alt="dependencies" src="https://img.shields.io/badge/dependencies-1-brightgreen?style=flat-square">
 </p>
 
 <h1 align="center">dsh-context-ops · 上下文运维</h1>
 
 <p align="center">
   给 <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a>（<code>dsh</code>）的上下文管理插件：<br>
-  <b>交接</b>、<b>压缩决策</b>、<b>上下文诊断</b>三个技能 + 自包含<b>压力读数工具</b> + 三个<b>斜杠命令</b>。
+  <b>交接</b>、<b>压缩决策</b>、<b>上下文诊断</b>三个技能 + 自包含<b>压力读数工具</b> + 三个<b>斜杠命令</b> + <b>压力 toast 提醒</b>（Web Client 角标）。
 </p>
 
 > A DeepSeek Harness plugin for context management: handoff, compaction decision and diagnosis skills, a self-contained pressure tool, and slash commands.
@@ -42,7 +42,7 @@
 | 压力读数工具 | `context_pressure` | `lib/index.js` | 自包含读数 + 窗口证据（`windowSource` / `routeKey`） |
 | 历史/复盘工具 | `context_history` | `lib/index.js` | 峰值、最后一次输入侧 token、压缩尝试/成功/失败次数 |
 | 斜杠命令 | `/handoff` `/pressure` `/diagnose` | `lib/index.js` | 显式触发对应技能（`commands` 服务缺失时自动跳过） |
-| 主动提醒（可选） | `enableReminder` | `lib/index.js` | 压力过阈值时把一句提示挂进宿主「运行时上下文」快照，不伪造 user 消息 |
+| 压力 toast（可选） | `enableReminder` | `client.js` + 投影 | Web Client 右上角角标：`remindAt` 建议压缩、`handoffAt` 建议交接；60 秒自动收起，发起压缩立即收起 |
 | 压缩摘要走强模型 | `compaction-basic` 配置 | 文档化（见下） | 走 DSH 原生字段，本插件**不写死**任何账号/模型 |
 
 ## 快速开始
@@ -192,7 +192,11 @@ flowchart LR
         T[tools registry]
         C[commands]
         M[tokenMeter]
-        SP[systemPrompt.context]
+        PR[contextPressure 投影]
+    end
+    subgraph W["Web Client"]
+        SL[conversation.input.dock slot]
+        BN[压力 toast（client.js）]
     end
     subgraph P["dsh-context-ops"]
         H["context-handoff"]
@@ -201,7 +205,8 @@ flowchart LR
         PT["context_pressure"]
         HT["context_history"]
         CM["/handoff · /pressure · /diagnose"]
-        RM["压力提醒（可选）"]
+        RC["contextOpsReminderConfig 投影"]
+        CS["contextOpsCompactionSignal 投影"]
     end
     H --> S
     D --> S
@@ -210,8 +215,11 @@ flowchart LR
     HT --> T
     PT --> M
     CM --> C
-    RM --> SP
-    RM --> M
+    RC --> PR
+    CS --> PR
+    BN --> SL
+    BN -.读投影.-> RC
+    BN -.读投影.-> CS
 ```
 
 ```mermaid
@@ -232,7 +240,7 @@ flowchart TD
 |---|---|---|
 | `enablePressureTool` | `true` | 是否注册 `context_pressure` + `context_history` 两个工具（需要 `tokenMeter`，缺失时自动跳过）|
 | `enableCommands` | `true` | 是否注册 `/handoff` `/pressure` `/diagnose`（需要 `commands`，缺失时自动跳过）|
-| `enableReminder` | `false` | 主动提醒：压力 ≥ `remindAt` 时，把一句提示挂进宿主「运行时上下文」快照 |
+| `enableReminder` | `false` | 压力 toast：Web Client 右上角显示「建议 /compact / 建议交接」角标（见下）|
 | `remindAt` | `85` | 提醒阈值百分比（50–95）|
 | `handoffAt` | `92` | 交接提示线百分比（50–95，必须 ≥ `remindAt`）；压力 ≥ 此值时暂停任务、展示 brief 并请求确认，不会绕过确认自动写盘 |
 | `realWindows` | `{}` | 按 `provider/model` 填的实测安全窗口，见下 |
@@ -269,23 +277,19 @@ flowchart TD
 
 > ⚠ 注意 DSH patch 的语义是**同 id 整段替换 config**，不是合并：在 profile 里覆盖 `context-ops` 这一行时，其它键也要一起写全，否则会打回默认值。
 
-### 主动提醒（可选）
+### 压力 toast（可选）
 
-开启后，每次装配请求时求值一次：`pct ≥ remindAt` 就把一句 `system-reminder` 挂进宿主的
-**运行时上下文快照**（`ctx.systemPrompt.context()`）。
+开启 `enableReminder` 后，Web Client 会在**当前会话右上角**显示一条压力角标（toast）：
 
-- **两档行为**：
-  - `pct ≥ remindAt`（默认 85%）→ **建议**压缩或交接；
-  - `pct ≥ handoffAt`（默认 92%）→ **暂停并请求确认**：提醒模型展示五行 brief，并用 `ask_user_question` 请求用户确认；确认前不得写 `CHECKPOINT.md`，也不得宣称已自动交接。
-- **确认闸不可绕过**：主动提醒只是建议/暂停信号，不改变 `context-handoff` 的「用户确认后写盘」规则。
-- **运行时上下文的持久化**：提醒不伪造 user 消息，但宿主可能把 runtime-context 快照以去重后的 user/message 事件持久化；本插件只保证不通过 `agent/pre-step` 每轮重复追加，不承诺“绝不落历史”。
-- **不伪造 user 消息**：这是关键。走 `agent/pre-step` 往 `decision.messages` 里塞消息看着像「不落盘」，
-  但宿主 `step()` 会把每一条非 `runtime-context` 的消息 `session.append('user/message')` ——
-  提醒会进会话历史、出现在对话里、之后每个请求都重发，等于上下文插件自己给自己加压力。
-- **只按档位变文案**：文本里不带精确百分比和 token 数（那会让快照每轮重写）。跨档（85 → 95）才变；
-  压力回落自动消失。
-- **可忽略**：文案带「可忽略」，不影响正常对话；要精确数字让它调 `context_pressure`。
-- **默认关闭**：`enableReminder: true` 才生效。
+- **两档文案**：
+  - 占用 ≥ `remindAt`（默认 85%）→ 黄色：「上下文已达 85%，建议 /compact」；
+  - 占用 ≥ `handoffAt`（默认 92%）→ 红色：「上下文已达 92%，建议立即交接」。
+- **60 秒自动收起**：弹出后最多展示 60 秒，超时自动退出；隐藏状态按 `sessionId + 档位` 记在 localStorage，组件重挂载 / 重启 App 不会重新计时，关闭 App 期间走完的截止时间也不会复活。
+- **发起压缩立即收起**：宿主每开始一次摘要压缩（`compaction/start`），Client 收到信号就立刻收起当前 toast，不等 60 秒；压缩导致的降档不换档重弹，等有效读数确实回落后重新武装。
+- **只算档位**：占用优先用宿主自己的 `projectedTokens`（下一次请求的估算，压缩后先回落），缺失时回退到 `pressureTokens`。
+- **不写会话历史**：提醒走投影（`contextPressure` + 插件自己的 `contextOpsReminderConfig` / `contextOpsCompactionSignal`），不追加 Session 事件、不伪造 user 消息，不会越提醒越占上下文。
+- **无 Client 不影响 Host**：不用 Web Client（纯 CLI / headless）时 toast 自然不显示，技能和工具照常工作。
+- **默认关闭**：`enableReminder: true` 才生效；阈值（`remindAt` / `handoffAt`）改 profile 即可，Client 每次按当前配置现算，不会被旧会话缓存卡住。
 
 ## 健壮性
 
@@ -293,10 +297,10 @@ flowchart TD
 |---|---|
 | `tokenMeter` 缺失 | 跳过两个工具（读数没数据源），三个技能照常注册 |
 | `commands` 缺失 | 只跳过斜杠命令，技能与工具照常 |
-| `systemPrompt` 缺失 | 只跳过主动提醒，其余照常 |
+| Web Client / 投影缺失 | toast 不显示，技能与工具照常；读数恢复后不复活已退出的提醒 |
 | 无会话调用工具 | 返回空值 + `note: no session`（`pressureTokens` 仍是 0，所以**必须看 note**）|
 | 读数失败 | 返回空值 + `note` 错误说明，不把读数故障变成对话故障 |
-| 提醒求值失败 | 返回空串（不注入），并留一条 `warn` 日志，不静默吞掉代码错误 |
+| 提醒求值失败 | toast 不显示，并留一条 `warn` 日志，不静默吞掉代码错误 |
 
 ## 配置：压缩摘要走强模型（可选）
 
@@ -324,13 +328,14 @@ dsh-context-ops/
 │       ├── handoff.js    交接技能
 │       ├── decision.js   上下文决策技能
 │       └── diagnose.js   上下文诊断技能
+├── client.js             Web Client 入口：压力 toast（conversation.input.dock slot）
 ├── locale/               双语 metadata（en/zh）
 ├── assets/               README 配图（hero、ladder）
 ├── test/                 node --test 单元测试
 ├── cordis.patch.yml      自注册入口
 ├── icon.svg              插件图标
 ├── CHANGELOG.md          更新日志
-├── package.json          无依赖，dsh.bundle 声明
+├── package.json          dsh.bundle + dsh.client 声明，依赖 zod
 └── README.md
 ```
 
@@ -339,8 +344,8 @@ dsh-context-ops/
 | 项 | 要求 |
 |---|---|
 | Node.js | `>= 20` |
-| DSH | 0.2.x（使用 `ctx.skills.register` / `ctx.tools.register` / `ctx.commands.register` / `tokenMeter`） |
-| 运行时依赖 | 0（纯 ESM，仅用 `node:crypto`） |
+| DSH | 0.2.x（使用 `ctx.skills.register` / `ctx.tools.register` / `ctx.commands.register` / `tokenMeter` / session 投影 / `dsh.client` Web Client 入口） |
+| 运行时依赖 | 1（`zod`，投影 schema 校验）|
 | 存储改动 | 无（不改 DSH 存储 schema，可回滚） |
 
 ## 开发与测试

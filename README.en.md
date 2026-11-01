@@ -6,14 +6,14 @@
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square">
   <img alt="node" src="https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square">
   <img alt="dsh-plugin" src="https://img.shields.io/badge/dsh-plugin-5b8cff?style=flat-square">
-  <img alt="dependencies" src="https://img.shields.io/badge/dependencies-0-brightgreen?style=flat-square">
+  <img alt="dependencies" src="https://img.shields.io/badge/dependencies-1-brightgreen?style=flat-square">
 </p>
 
 <h1 align="center">dsh-context-ops</h1>
 
 <p align="center">
   A <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> (<code>dsh</code>) plugin for context management:<br>
-  <b>handoff</b>, <b>compaction decision</b> and <b>diagnosis</b> skills, a self-contained <b>pressure tool</b>, and three <b>slash commands</b>.
+  <b>handoff</b>, <b>compaction decision</b> and <b>diagnosis</b> skills, a self-contained <b>pressure tool</b>, three <b>slash commands</b>, and a <b>pressure toast</b> in the Web Client.
 </p>
 
 > 中文版见 [README.md](README.md)。
@@ -40,7 +40,7 @@
 | Pressure tool | `context_pressure` | `lib/index.js` | Self-contained; also reports window evidence (`windowSource` / `routeKey`) |
 | History tool | `context_history` | `lib/index.js` | Peak / last input-side tokens, compaction attempts / successes / failures |
 | Slash commands | `/handoff` `/pressure` `/diagnose` | `lib/index.js` | Explicit triggers (skipped when no `commands` service) |
-| Pressure reminder (opt-in) | `enableReminder` | `lib/index.js` | Adds one line to the host's runtime-context snapshot; never fakes a user message |
+| Pressure toast (opt-in) | `enableReminder` | `client.js` + projections | Web Client corner badge: suggests `/compact` at `remindAt` and handoff at `handoffAt`; auto-hides after 60 s, instantly on compaction |
 | Compaction model | `compaction-basic` config | documented below | Native DSH fields; **no hard-coded provider/model** |
 
 ## Quick start
@@ -190,7 +190,11 @@ flowchart LR
         T[tools registry]
         C[commands]
         M[tokenMeter]
-        SP[systemPrompt.context]
+        PR[contextPressure projection]
+    end
+    subgraph W["Web Client"]
+        SL[conversation.input.dock slot]
+        BN["pressure toast (client.js)"]
     end
     subgraph P["dsh-context-ops"]
         H["context-handoff"]
@@ -199,7 +203,8 @@ flowchart LR
         PT["context_pressure"]
         HT["context_history"]
         CM["/handoff · /pressure · /diagnose"]
-        RM["pressure reminder (opt-in)"]
+        RC["contextOpsReminderConfig projection"]
+        CS["contextOpsCompactionSignal projection"]
     end
     H --> S
     D --> S
@@ -208,8 +213,11 @@ flowchart LR
     HT --> T
     PT --> M
     CM --> C
-    RM --> SP
-    RM --> M
+    RC --> PR
+    CS --> PR
+    BN --> SL
+    BN -.reads.-> RC
+    BN -.reads.-> CS
 ```
 
 ```mermaid
@@ -230,7 +238,7 @@ flowchart TD
 |---|---|---|
 | `enablePressureTool` | `true` | Register `context_pressure` + `context_history` (needs `tokenMeter`; skipped if missing) |
 | `enableCommands` | `true` | Register `/handoff` `/pressure` `/diagnose` (needs `commands`; skipped if missing) |
-| `enableReminder` | `false` | Active reminder: when pressure ≥ `remindAt`, adds one line to the host's runtime-context snapshot |
+| `enableReminder` | `false` | Pressure toast: a corner badge in the Web Client suggesting `/compact` or handoff (see below) |
 | `remindAt` | `85` | Reminder threshold percent (50–95) |
 | `handoffAt` | `92` | Handoff confirmation prompt percent (50–95, must be ≥ `remindAt`); at or above it pauses and requests confirmation before writing `CHECKPOINT.md` |
 | `realWindows` | `{}` | Measured safe windows keyed by `provider/model`; see below |
@@ -267,25 +275,19 @@ Rules:
 
 > ⚠ DSH patches **replace the whole `config` of a matching id**; they do not merge. When overriding the `context-ops` row in your profile, repeat every key, otherwise the others snap back to defaults.
 
-### Active reminder (optional)
+### Pressure toast (optional)
 
-When enabled it is evaluated on every request assembly: if `pct ≥ remindAt`, one `system-reminder` line is
-attached to the host's **runtime-context snapshot** (`ctx.systemPrompt.context()`).
+With `enableReminder` on, the Web Client shows a pressure badge (toast) in the **top-right corner of the current session**:
 
 - **Two tiers**:
-  - `pct ≥ remindAt` (default 85%) → **suggest** compaction or handoff;
-  - `pct ≥ handoffAt` (default 92%) → **pause and request confirmation**: the model must show the five-line brief and ask for confirmation; it must not write `CHECKPOINT.md` or claim an automatic handoff before confirmation.
-- **The confirmation gate cannot be bypassed**: the reminder is only a pause/suggestion signal and does not change the `context-handoff` confirmation rule.
-- **Runtime-context persistence**: the reminder does not fake a user message, but the host may persist a deduplicated runtime-context snapshot as a `user/message` event. The plugin only avoids repeated `agent/pre-step` appends; it does not promise that the snapshot is never persisted.
-- **No fake user message** — this is the key point. Injecting into `decision.messages` via `agent/pre-step` looks
-  non-persisted, but the host's `step()` appends every non-`runtime-context` message with
-  `session.append('user/message')`: the reminder would enter the session history, show up in the
-  conversation, and be re-sent on every later request — a context plugin inflating its own context.
-- **Text varies by band only**: no exact percentages or token counts (those would rewrite the snapshot every
-  single request). It changes when crossing a band (85 → 95) and disappears when pressure falls back.
-- **Ignorable**: the text says so and does not affect the conversation; it tells the model to call
-  `context_pressure` when it needs exact numbers.
-- **Off by default**: only active with `enableReminder: true`.
+  - usage ≥ `remindAt` (default 85%) → yellow: "suggest /compact";
+  - usage ≥ `handoffAt` (default 92%) → red: "suggest handoff now".
+- **Auto-hides after 60 s**; the hidden state is stored per `sessionId + band` in localStorage, so remounting the component or restarting the app does not restart the timer, and a deadline that elapsed while the app was closed does not resurrect the toast.
+- **Hides instantly when a compaction starts** (`compaction/start` signal via projection) — no waiting for the 60-second timer. A compaction-driven downgrade does not re-pop another toast; it re-arms only after a valid reading actually falls back.
+- **Usage number**: prefers the host's own `projectedTokens` (next-request estimate, falls back right after compaction); falls back to `pressureTokens`.
+- **Nothing written to the session**: the toast is driven by projections (`contextPressure` plus the plugin's own `contextOpsReminderConfig` / `contextOpsCompactionSignal`); it appends no session events and fakes no user messages.
+- **No Client, no problem**: without the Web Client (pure CLI / headless) the toast simply never shows; skills and tools are unaffected.
+- **Off by default**: only active with `enableReminder: true`. Thresholds (`remindAt` / `handoffAt`) are recomputed from the current profile config each time, so old session caches never pin stale thresholds.
 
 ## Robustness
 
@@ -293,10 +295,10 @@ attached to the host's **runtime-context snapshot** (`ctx.systemPrompt.context()
 |---|---|
 | `tokenMeter` missing | Both tools are skipped (no data source); all three skills still register |
 | `commands` missing | Only the slash commands are skipped; skills and tools are unaffected |
-| `systemPrompt` missing | Only the active reminder is skipped |
+| Web Client / projections missing | Toast never shows; skills and tools keep working; a dismissed toast is not resurrected when readings recover |
 | Tool called with no session | Empty values + `note: no session` (`pressureTokens` stays 0, so **the note matters**) |
 | Reading fails | Empty values + a `note`; a reading failure never becomes a conversation failure |
-| Reminder evaluation fails | Empty string (nothing injected) plus a `warn` log — code errors are not swallowed silently |
+| Reminder evaluation fails | Toast not shown, plus a `warn` log — code errors are not swallowed silently |
 
 ## Compaction model (optional)
 
@@ -322,13 +324,14 @@ dsh-context-ops/
 │       ├── handoff.js    handoff skill
 │       ├── decision.js   context decision skill
 │       └── diagnose.js   context diagnosis skill
+├── client.js             Web Client entry: pressure toast (conversation.input.dock slot)
 ├── locale/               bilingual metadata (en/zh)
 ├── assets/               README images (hero, ladder)
 ├── test/                 node --test unit tests
 ├── cordis.patch.yml      self-registration entry
 ├── icon.svg              plugin icon
 ├── CHANGELOG.md          changelog
-├── package.json          no dependencies, dsh.bundle manifest
+├── package.json          dsh.bundle + dsh.client manifest, depends on zod
 └── README.md / README.en.md
 ```
 
@@ -338,7 +341,7 @@ dsh-context-ops/
 |---|---|
 | Node.js | `>= 20` |
 | DSH | 0.2.x (uses `ctx.skills.register` / `ctx.tools.register` / `ctx.commands.register` / `tokenMeter`) |
-| Runtime dependencies | 0 (pure ESM, only `node:crypto`) |
+| Runtime dependencies | 1 (`zod`, projection schema validation) |
 | Storage changes | None (no DSH storage schema changes; reversible) |
 
 ## Development
